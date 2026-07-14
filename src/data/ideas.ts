@@ -1,9 +1,11 @@
 import type { Category, Idea } from '../lib/types'
+import { IDEAS_EXTRA } from './ideas-extra'
 
-// Content-Datenbank: 150 Kern-Ideen. Der Generator kombiniert jede Idee mit
-// Hook-, CTA- und Frage-Pools -> tausende Varianten.
+// Content-Datenbank: 300 Kern-Ideen (150 hier + 150 in ideas-extra.ts).
+// Der Generator kombiniert jede Idee mit Hook-, CTA- und Frage-Pools
+// -> tausende Varianten.
 
-export const IDEAS: Idea[] = [
+const IDEAS_BASE: Idea[] = [
   // ---------------- EDUCATION (30) ----------------
   { id: 'edu-01', cat: 'education', title: 'Warum du deine Workouts tracken solltest', short: 'Dein Gehirn vergisst über 80 % deines letzten Trainings. Deine Daten nicht.' },
   { id: 'edu-02', cat: 'education', title: 'Progressive Overload passiert nicht zufällig', short: 'Stärker wirst du nur, wenn du weißt, was du letzte Woche geschafft hast.' },
@@ -166,6 +168,8 @@ export const IDEAS: Idea[] = [
   { id: 'cmu-19', cat: 'community', title: 'Erste Übung nach dem Aufwärmen?', short: 'Verrat uns deinen Standard-Opener.' },
   { id: 'cmu-20', cat: 'community', title: 'Wem verdankst du deinen Gym-Start?', short: 'Markiere die Person, die dich ins Training gebracht hat.' },
 ]
+
+export const IDEAS: Idea[] = [...IDEAS_BASE, ...IDEAS_EXTRA]
 
 // Punkte-Pools fuer Carousel-Slides (pro Kategorie)
 export const CAROUSEL_POINTS: Record<Category, { heading: string; body: string }[]> = {

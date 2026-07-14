@@ -12,7 +12,7 @@ interface Palette {
   line: string
 }
 
-const PALETTES: Record<PostTheme, Palette> = {
+export const PALETTES: Record<PostTheme, Palette> = {
   dark: { bg: '#0A0A0A', fg: '#FFFFFF', muted: 'rgba(255,255,255,0.55)', line: 'rgba(255,255,255,0.16)' },
   light: { bg: '#FAFAFA', fg: '#0A0A0A', muted: 'rgba(10,10,10,0.55)', line: 'rgba(10,10,10,0.14)' },
 }
@@ -45,7 +45,7 @@ function wrap(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): st
 }
 
 // Findet die groesste Schriftgroesse <= base, bei der der Text in maxLines passt
-function fitText(
+export function fitText(
   ctx: CanvasRenderingContext2D,
   text: string,
   maxWidth: number,
@@ -210,7 +210,7 @@ export interface MockupSpec {
   kickerText?: string
 }
 
-function roundedPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+export function roundedPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   ctx.beginPath()
   ctx.moveTo(x + r, y)
   ctx.arcTo(x + w, y, x + w, y + h, r)
