@@ -23,6 +23,8 @@ export interface Slide {
   body?: string
   index: number
   total: number
+  // Screenshot einblenden: Slide behaelt Texte, rendert aber mit Geraet
+  withShot?: boolean
 }
 
 export interface GeneratedPost {

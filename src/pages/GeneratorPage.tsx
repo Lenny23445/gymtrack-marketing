@@ -52,10 +52,6 @@ export default function GeneratorPage({ request }: { request: GeneratorRequest |
     const sl = post.slides!
     setSlides([...sl.slice(0, sl.length - 1), { kind: 'point', heading: 'Neuer Punkt', body: 'Text hier eingeben.', index: 0, total: 0 }, sl[sl.length - 1]])
   }
-  const addShotSlide = () => {
-    const sl = post.slides!
-    setSlides([...sl.slice(0, sl.length - 1), { kind: 'shot', heading: post.headline, body: post.sub, index: 0, total: 0 }, sl[sl.length - 1]])
-  }
 
   const handleSelect = (image: HTMLImageElement | null, id: string | null) => {
     setImg(image)
@@ -83,7 +79,7 @@ export default function GeneratorPage({ request }: { request: GeneratorRequest |
     if (!c) return
     if (format === 'carousel' && post.slides) {
       const s = post.slides[Math.min(slideIdx, post.slides.length - 1)]
-      if (s.kind === 'shot' && img) {
+      if ((s.withShot || s.kind === 'shot') && img) {
         drawMockup(c, { img, headline: s.heading, sub: s.body ?? '', theme, w: 1080, h: 1350, kickerText: CATEGORY_META[post.category].kicker })
       } else {
         drawSlide(c, s, theme, CATEGORY_META[post.category].kicker)
@@ -144,7 +140,7 @@ export default function GeneratorPage({ request }: { request: GeneratorRequest |
       post.slides.forEach((s, i) => {
         setTimeout(() => {
           const tmp = document.createElement('canvas')
-          if (s.kind === 'shot' && img) {
+          if ((s.withShot || s.kind === 'shot') && img) {
             drawMockup(tmp, { img, headline: s.heading, sub: s.body ?? '', theme, w: 1080, h: 1350, kickerText: CATEGORY_META[post.category].kicker })
           } else {
             drawSlide(tmp, s, theme, CATEGORY_META[post.category].kicker)
@@ -253,9 +249,16 @@ export default function GeneratorPage({ request }: { request: GeneratorRequest |
                       <div className="row" style={{ justifyContent: 'space-between', marginBottom: 8 }}>
                         <span className="row" style={{ gap: 8 }}>
                           <span className="tag dark">Slide {i + 1}</span>
-                          <span className="tag">{s.kind === 'cover' ? 'Cover' : s.kind === 'cta' ? 'CTA' : s.kind === 'shot' ? 'Screenshot' : 'Punkt'}</span>
+                          <span className="tag">{s.kind === 'cover' ? 'Cover' : s.kind === 'cta' ? 'CTA' : 'Punkt'}</span>
                         </span>
                         <span className="row" style={{ gap: 6 }}>
+                          <button
+                            className={'btn btn-sm' + (s.withShot ? ' btn-primary' : '')}
+                            onClick={() => updSlide(i, { withShot: !s.withShot })}
+                            title="App-Screenshot auf diesem Slide ein-/ausblenden"
+                          >
+                            Screenshot
+                          </button>
                           <button className="btn btn-sm" disabled={i === 0} onClick={() => moveSlide(i, -1)} title="Nach vorne">↑</button>
                           <button className="btn btn-sm" disabled={i === post.slides!.length - 1} onClick={() => moveSlide(i, 1)} title="Nach hinten">↓</button>
                           <button className="btn btn-sm" disabled={post.slides!.length <= 2} onClick={() => delSlide(i)} title="Löschen">×</button>
@@ -263,14 +266,13 @@ export default function GeneratorPage({ request }: { request: GeneratorRequest |
                       </div>
                       <input type="text" value={s.heading} onChange={e => updSlide(i, { heading: e.target.value })} />
                       <textarea rows={2} value={s.body ?? ''} onChange={e => updSlide(i, { body: e.target.value })} style={{ marginTop: 6 }} />
-                      {s.kind === 'shot' && !img && (
+                      {s.withShot && !img && (
                         <p className="hint" style={{ marginTop: 4 }}>Noch kein Screenshot gewählt — links in der Bibliothek anklicken, sonst rendert der Slide als Text.</p>
                       )}
                     </div>
                   ))}
                   <div className="row" style={{ marginTop: 12 }}>
                     <button className="btn btn-sm" onClick={addSlide}>+ Slide</button>
-                    <button className="btn btn-sm" onClick={addShotSlide}>+ Screenshot-Slide</button>
                   </div>
                 </>
               ) : (
@@ -285,22 +287,14 @@ export default function GeneratorPage({ request }: { request: GeneratorRequest |
               )}
             </div>
             <div className="card">
-              <h3>Hook</h3>
-              <div className="mono-block">{post.hook}</div>
-            </div>
-            <div className="card">
-              <h3>Caption</h3>
+              <h3>Caption & Hashtags</h3>
               <div className="mono-block">{post.caption}</div>
-              <div className="row" style={{ marginTop: 12 }}>
-                <CopyButton text={post.caption} label="Caption kopieren" />
-                <CopyButton text={fullCaption(post)} label="Caption + Hashtags" primary />
-              </div>
-            </div>
-            <div className="card">
-              <h3>Hashtags ({post.hashtags.length})</h3>
+              <label className="field-label" style={{ marginTop: 12 }}>Hashtags ({post.hashtags.length})</label>
               <div className="mono-block">{hashtagBlock(post.hashtags)}</div>
               <div className="row" style={{ marginTop: 12 }}>
-                <CopyButton text={hashtagBlock(post.hashtags)} label="Hashtags kopieren" />
+                <CopyButton text={fullCaption(post)} label="Alles kopieren" primary />
+                <CopyButton text={post.caption} label="Nur Caption" />
+                <CopyButton text={hashtagBlock(post.hashtags)} label="Nur Hashtags" />
               </div>
             </div>
           </div>

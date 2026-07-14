@@ -67,9 +67,6 @@ export default function TikTokPage() {
   const addTextSlide = () =>
     setSlides([...slides, { text: 'dein text hier', note: 'Eigener Slide', kind: 'text' }])
 
-  const addShotSlide = () =>
-    setSlides([...slides, { text: title, note: 'App-Screenshot im Phone-Frame — Headline anpassen.', kind: 'shot' }])
-
   const setCount = (n: number) => {
     if (n === slides.length) return
     if (n < slides.length) setSlides(slides.slice(0, n))
@@ -189,9 +186,15 @@ export default function TikTokPage() {
                   <div className="row" style={{ justifyContent: 'space-between', marginBottom: 8 }}>
                     <span className="row" style={{ gap: 8 }}>
                       <span className="tag dark">Slide {i + 1}</span>
-                      <span className="tag">{s.kind === 'shot' ? 'Screenshot' : 'Text'}</span>
                     </span>
                     <span className="row" style={{ gap: 6 }}>
+                      <button
+                        className={'btn btn-sm' + (s.kind === 'shot' ? ' btn-primary' : '')}
+                        onClick={() => updSlide(i, { kind: s.kind === 'shot' ? 'text' : 'shot' })}
+                        title="App-Screenshot auf diesem Slide ein-/ausblenden"
+                      >
+                        Screenshot
+                      </button>
                       {s.kind !== 'shot' && (
                         <Seg options={ALIGNS} value={s.align ?? 'center'} onChange={(v: VAlign) => updSlide(i, { align: v })} />
                       )}
@@ -209,8 +212,7 @@ export default function TikTokPage() {
                 </div>
               ))}
               <div className="row" style={{ marginTop: 12 }}>
-                <button className="btn btn-sm" onClick={addTextSlide}>+ Text-Slide</button>
-                <button className="btn btn-sm" onClick={addShotSlide}>+ Screenshot-Slide</button>
+                <button className="btn btn-sm" onClick={addTextSlide}>+ Slide</button>
               </div>
             </div>
             <div className="card">
