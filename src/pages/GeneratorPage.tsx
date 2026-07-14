@@ -1,0 +1,296 @@
+import { useEffect, useRef, useState } from 'react'
+import type { GeneratorRequest } from '../App'
+import { CATEGORY_META, FORMAT_META } from '../lib/types'
+import type { Category, GeneratedPost, PostFormat, PostTheme, Slide, VAlign } from '../lib/types'
+import { findIdea, randomIdea } from '../data/ideas'
+import { generatePost, fullCaption, hashtagBlock } from '../lib/generator'
+import { scorePost } from '../lib/scoring'
+import { drawPost, drawSlide, drawMockup, downloadCanvas, canvasThumb } from '../lib/canvas'
+import { addPlanned } from '../lib/store'
+import { CopyButton, ScoreCard, Seg } from '../components/ui'
+import { ScreenshotPicker } from '../components/ScreenshotPicker'
+
+const CATS = (Object.keys(CATEGORY_META) as Category[]).map(c => ({ value: c, label: CATEGORY_META[c].label }))
+const FORMATS = (Object.keys(FORMAT_META) as PostFormat[]).map(f => ({ value: f, label: FORMAT_META[f].label }))
+
+export default function GeneratorPage({ request }: { request: GeneratorRequest | null }) {
+  const [category, setCategory] = useState<Category>('education')
+  const [format, setFormat] = useState<PostFormat>('single')
+  const [theme, setTheme] = useState<PostTheme>('dark')
+  const [post, setPost] = useState<GeneratedPost>(() => generatePost(randomIdea('education'), 'single', 'dark'))
+  const [slideIdx, setSlideIdx] = useState(0)
+  const [saved, setSaved] = useState(false)
+  const [img, setImg] = useState<HTMLImageElement | null>(null)
+  const [pickId, setPickId] = useState<string | null>(null)
+  const [visual, setVisual] = useState<'typo' | 'shot' | 'promo'>('typo')
+  const [vAlign, setVAlign] = useState<VAlign>('center')
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+
+  // Slide-Editor (Carousel): Texte aendern, tauschen, loeschen, ergaenzen
+  const renumber = (arr: Slide[]): Slide[] => arr.map((s, n) => ({ ...s, index: n + 1, total: arr.length }))
+  const setSlides = (next: Slide[]) => {
+    setPost({ ...post, slides: renumber(next) })
+    setSlideIdx(i => Math.min(i, next.length - 1))
+    setSaved(false)
+  }
+  const updSlide = (i: number, patch: Partial<Slide>) =>
+    setSlides(post.slides!.map((s, n) => (n === i ? { ...s, ...patch } : s)))
+  const moveSlide = (i: number, dir: -1 | 1) => {
+    const sl = post.slides!
+    const j = i + dir
+    if (j < 0 || j >= sl.length) return
+    const next = [...sl]
+    ;[next[i], next[j]] = [next[j], next[i]]
+    setSlides(next)
+    setSlideIdx(j)
+  }
+  const delSlide = (i: number) => {
+    if (post.slides!.length <= 2) return
+    setSlides(post.slides!.filter((_, n) => n !== i))
+  }
+  const addSlide = () => {
+    const sl = post.slides!
+    setSlides([...sl.slice(0, sl.length - 1), { kind: 'point', heading: 'Neuer Punkt', body: 'Text hier eingeben.', index: 0, total: 0 }, sl[sl.length - 1]])
+  }
+
+  const handleSelect = (image: HTMLImageElement | null, id: string | null) => {
+    setImg(image)
+    setPickId(id)
+    if (image && visual === 'typo') setVisual('shot')
+    if (!image) setVisual('typo')
+  }
+
+  // Anfrage aus Datenbank / Kalender
+  useEffect(() => {
+    if (!request) return
+    const idea = findIdea(request.ideaId)
+    if (!idea) return
+    const f = request.format ?? 'single'
+    setCategory(idea.cat)
+    setFormat(f)
+    setPost(generatePost(idea, f, theme))
+    setSlideIdx(0)
+    setSaved(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [request?.nonce])
+
+  useEffect(() => {
+    const c = canvasRef.current
+    if (!c) return
+    if (format === 'carousel' && post.slides) {
+      drawSlide(c, post.slides[Math.min(slideIdx, post.slides.length - 1)], theme, CATEGORY_META[post.category].kicker)
+    } else if (img && visual !== 'typo') {
+      const meta = FORMAT_META[format]
+      // 'shot': Idee-Text + Screenshot im Geraet · 'promo': CTA gross + Screenshot
+      drawMockup(c, {
+        img,
+        headline: visual === 'promo' ? post.cta : post.headline,
+        sub: visual === 'promo' ? post.headline : post.sub,
+        theme,
+        w: meta.w,
+        h: meta.h,
+        kickerText: CATEGORY_META[post.category].kicker,
+      })
+    } else {
+      const meta = FORMAT_META[format]
+      drawPost(c, {
+        kickerText: CATEGORY_META[post.category].kicker,
+        headline: post.headline,
+        sub: post.sub,
+        theme,
+        w: meta.w,
+        h: meta.h,
+        vAlign,
+      })
+    }
+  }, [post, slideIdx, theme, format, img, visual, vAlign])
+
+  const newIdea = () => {
+    setPost(generatePost(randomIdea(category, post.ideaId), format, theme))
+    setSlideIdx(0)
+    setSaved(false)
+  }
+  const newVariant = () => {
+    const idea = findIdea(post.ideaId) ?? randomIdea(category)
+    setPost(generatePost(idea, format, theme))
+    setSlideIdx(0)
+    setSaved(false)
+  }
+  const changeCat = (c: Category) => {
+    setCategory(c)
+    setPost(generatePost(randomIdea(c), format, theme))
+    setSlideIdx(0)
+    setSaved(false)
+  }
+  const changeFormat = (f: PostFormat) => {
+    setFormat(f)
+    const idea = findIdea(post.ideaId) ?? randomIdea(category)
+    setPost(generatePost(idea, f, theme))
+    setSlideIdx(0)
+    setSaved(false)
+  }
+
+  const download = () => {
+    if (format === 'carousel' && post.slides) {
+      post.slides.forEach((s, i) => {
+        setTimeout(() => {
+          const tmp = document.createElement('canvas')
+          drawSlide(tmp, s, theme, CATEGORY_META[post.category].kicker)
+          downloadCanvas(tmp, `${post.ideaId}-slide-${i + 1}`)
+        }, i * 350)
+      })
+    } else if (canvasRef.current) {
+      downloadCanvas(canvasRef.current, `${post.ideaId}-${format}`)
+    }
+  }
+
+  const saveToPlanner = () => {
+    addPlanned({
+      id: post.id,
+      date: new Date().toISOString().slice(0, 10),
+      status: 'draft',
+      format,
+      category: post.category,
+      headline: post.headline,
+      caption: fullCaption(post),
+      hashtags: post.hashtags,
+      thumb: canvasRef.current ? canvasThumb(canvasRef.current) : undefined,
+      createdAt: Date.now(),
+    })
+    setSaved(true)
+  }
+
+  const score = scorePost(post)
+
+  return (
+    <>
+      <div className="page-header">
+        <h1>Instagram Post-Generator</h1>
+        <p>Kategorie und Format wählen — das Studio erzeugt Visual, Hook, Caption, CTA und Hashtags in einem Schritt. Für Single Post &amp; Story lässt sich ein App-Screenshot einbauen.</p>
+      </div>
+      <div className="stack">
+        <div className="card">
+          <div className="row" style={{ justifyContent: 'space-between' }}>
+            <div className="row">
+              <Seg options={CATS} value={category} onChange={changeCat} />
+              <Seg options={FORMATS} value={format} onChange={changeFormat} />
+              <Seg options={[{ value: 'dark', label: 'Dark' }, { value: 'light', label: 'Light' }]} value={theme} onChange={(t: PostTheme) => setTheme(t)} />
+            </div>
+            <div className="row">
+              <button className="btn" onClick={newVariant}>Text-Variante</button>
+              <button className="btn btn-primary" onClick={newIdea}>Neue Idee</button>
+            </div>
+          </div>
+        </div>
+        <div className="split">
+          <div className="stack">
+            <div className="card">
+              <h3>Vorschau · {FORMAT_META[format].label}</h3>
+              {format !== 'carousel' && (
+                <div className="row" style={{ marginBottom: 12 }}>
+                  <Seg
+                    options={[{ value: 'typo', label: 'Typo' }, { value: 'shot', label: 'Screenshot' }, { value: 'promo', label: 'Promo' }]}
+                    value={visual}
+                    onChange={(v: 'typo' | 'shot' | 'promo') => setVisual(v)}
+                  />
+                  {visual === 'typo' && (
+                    <Seg
+                      options={[{ value: 'top', label: 'Oben' }, { value: 'center', label: 'Mitte' }, { value: 'bottom', label: 'Unten' }]}
+                      value={vAlign}
+                      onChange={(v: VAlign) => setVAlign(v)}
+                    />
+                  )}
+                </div>
+              )}
+              {format !== 'carousel' && visual !== 'typo' && !img && (
+                <p className="hint" style={{ marginBottom: 10 }}>Wähle unten einen Screenshot aus der Bibliothek — bis dahin Typo-Ansicht.</p>
+              )}
+              <canvas ref={canvasRef} className="preview-canvas" />
+              {format === 'carousel' && post.slides && (
+                <div className="slide-nav">
+                  <button className="btn btn-sm" onClick={() => setSlideIdx(i => Math.max(0, i - 1))}>←</button>
+                  <div className="slide-dots">
+                    {post.slides.map((_, i) => (
+                      <span key={i} className={i === slideIdx ? 'on' : ''} onClick={() => setSlideIdx(i)} />
+                    ))}
+                  </div>
+                  <button className="btn btn-sm" onClick={() => setSlideIdx(i => Math.min(post.slides!.length - 1, i + 1))}>→</button>
+                </div>
+              )}
+              <div className="row" style={{ marginTop: 14 }}>
+                <button className="btn btn-primary btn-sm" onClick={download}>
+                  {format === 'carousel' ? 'Alle Slides als PNG' : 'PNG herunterladen'}
+                </button>
+                <button className="btn btn-sm" onClick={saveToPlanner}>{saved ? '✓ Im Planner' : 'In Planner speichern'}</button>
+              </div>
+            </div>
+            {format !== 'carousel' && (
+              <div className="card">
+                <h3>Screenshot-Bibliothek</h3>
+                <ScreenshotPicker selectedId={pickId} onSelect={handleSelect} />
+              </div>
+            )}
+            <ScoreCard score={score} />
+          </div>
+          <div className="stack">
+            <div className="card">
+              <h3>{format === 'carousel' ? `Slides bearbeiten (${post.slides?.length ?? 0})` : 'Texte bearbeiten'}</h3>
+              {format === 'carousel' && post.slides ? (
+                <>
+                  {post.slides.map((s, i) => (
+                    <div key={i} style={{ borderBottom: i < post.slides!.length - 1 ? '1px solid var(--border)' : 'none', padding: '12px 0' }}>
+                      <div className="row" style={{ justifyContent: 'space-between', marginBottom: 8 }}>
+                        <span className="row" style={{ gap: 8 }}>
+                          <span className="tag dark">Slide {i + 1}</span>
+                          <span className="tag">{s.kind === 'cover' ? 'Cover' : s.kind === 'cta' ? 'CTA' : 'Punkt'}</span>
+                        </span>
+                        <span className="row" style={{ gap: 6 }}>
+                          <button className="btn btn-sm" disabled={i === 0} onClick={() => moveSlide(i, -1)} title="Nach vorne">↑</button>
+                          <button className="btn btn-sm" disabled={i === post.slides!.length - 1} onClick={() => moveSlide(i, 1)} title="Nach hinten">↓</button>
+                          <button className="btn btn-sm" disabled={post.slides!.length <= 2} onClick={() => delSlide(i)} title="Löschen">×</button>
+                        </span>
+                      </div>
+                      <input type="text" value={s.heading} onChange={e => updSlide(i, { heading: e.target.value })} />
+                      <textarea rows={2} value={s.body ?? ''} onChange={e => updSlide(i, { body: e.target.value })} style={{ marginTop: 6 }} />
+                    </div>
+                  ))}
+                  <div className="row" style={{ marginTop: 12 }}>
+                    <button className="btn btn-sm" onClick={addSlide}>+ Slide</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <label className="field-label">Headline</label>
+                  <input type="text" value={post.headline} onChange={e => { setPost({ ...post, headline: e.target.value }); setSaved(false) }} />
+                  <label className="field-label" style={{ marginTop: 12 }}>Subline</label>
+                  <textarea rows={2} value={post.sub} onChange={e => { setPost({ ...post, sub: e.target.value }); setSaved(false) }} />
+                  <label className="field-label" style={{ marginTop: 12 }}>CTA (Promo-Visual)</label>
+                  <input type="text" value={post.cta} onChange={e => { setPost({ ...post, cta: e.target.value }); setSaved(false) }} />
+                </>
+              )}
+            </div>
+            <div className="card">
+              <h3>Hook</h3>
+              <div className="mono-block">{post.hook}</div>
+            </div>
+            <div className="card">
+              <h3>Caption</h3>
+              <div className="mono-block">{post.caption}</div>
+              <div className="row" style={{ marginTop: 12 }}>
+                <CopyButton text={post.caption} label="Caption kopieren" />
+                <CopyButton text={fullCaption(post)} label="Caption + Hashtags" primary />
+              </div>
+            </div>
+            <div className="card">
+              <h3>Hashtags ({post.hashtags.length})</h3>
+              <div className="mono-block">{hashtagBlock(post.hashtags)}</div>
+              <div className="row" style={{ marginTop: 12 }}>
+                <CopyButton text={hashtagBlock(post.hashtags)} label="Hashtags kopieren" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
