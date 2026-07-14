@@ -18,7 +18,7 @@ export interface Idea {
 }
 
 export interface Slide {
-  kind: 'cover' | 'point' | 'cta'
+  kind: 'cover' | 'point' | 'cta' | 'shot'
   heading: string
   body?: string
   index: number
