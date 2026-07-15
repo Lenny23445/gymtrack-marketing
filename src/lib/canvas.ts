@@ -152,10 +152,9 @@ export function drawPost(canvas: HTMLCanvasElement, spec: PostDrawSpec) {
   footer(ctx, p, spec.w, spec.h)
 }
 
-export function drawSlide(canvas: HTMLCanvasElement, slide: Slide, theme: PostTheme, kickerText: string) {
+export function drawSlide(canvas: HTMLCanvasElement, slide: Slide, theme: PostTheme, kickerText: string, h = 1350) {
   const p = PALETTES[theme]
   const w = 1080
-  const h = 1350
   const ctx = ctx2d(canvas, w, h)
   const contentW = w - PAD * 2
 
@@ -178,7 +177,7 @@ export function drawSlide(canvas: HTMLCanvasElement, slide: Slide, theme: PostTh
   const bodyLH = bodyFit ? bodyFit.size * 1.42 : 0
   const gap = slide.body ? 52 : 0
   const blockH = head.lines.length * headLH + gap + (bodyFit ? bodyFit.lines.length * bodyLH : 0)
-  let y = slide.kind === 'point' ? 560 : (h - blockH) / 2 + head.size * 0.8
+  let y = slide.kind === 'point' ? Math.round(h * 0.415) : (h - blockH) / 2 + head.size * 0.8
 
   ctx.font = `700 ${head.size}px ${FONT}`
   ctx.fillStyle = p.fg

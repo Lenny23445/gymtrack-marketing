@@ -24,6 +24,10 @@ export default function GeneratorPage({ request }: { request: GeneratorRequest |
   const [pickId, setPickId] = useState<string | null>(null)
   const [visual, setVisual] = useState<'typo' | 'shot' | 'promo'>('typo')
   const [vAlign, setVAlign] = useState<VAlign>('center')
+  // Instagram-Seitenverhaeltnis: 4:5 (groesser im Feed, im Profil-Raster
+  // oben/unten beschnitten) oder 1:1 (wird nirgends beschnitten)
+  const [aspect, setAspect] = useState<'45' | '11'>('45')
+  const postH = format === 'story' ? 1920 : aspect === '11' ? 1080 : 1350
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   // Slide-Editor (Carousel): Texte aendern, tauschen, loeschen, ergaenzen
@@ -80,35 +84,33 @@ export default function GeneratorPage({ request }: { request: GeneratorRequest |
     if (format === 'carousel' && post.slides) {
       const s = post.slides[Math.min(slideIdx, post.slides.length - 1)]
       if ((s.withShot || s.kind === 'shot') && img) {
-        drawMockup(c, { img, headline: s.heading, sub: s.body ?? '', theme, w: 1080, h: 1350, kickerText: CATEGORY_META[post.category].kicker })
+        drawMockup(c, { img, headline: s.heading, sub: s.body ?? '', theme, w: 1080, h: postH, kickerText: CATEGORY_META[post.category].kicker })
       } else {
-        drawSlide(c, s, theme, CATEGORY_META[post.category].kicker)
+        drawSlide(c, s, theme, CATEGORY_META[post.category].kicker, postH)
       }
     } else if (img && visual !== 'typo') {
-      const meta = FORMAT_META[format]
       // 'shot': Idee-Text + Screenshot im Geraet · 'promo': CTA gross + Screenshot
       drawMockup(c, {
         img,
         headline: visual === 'promo' ? post.cta : post.headline,
         sub: visual === 'promo' ? post.headline : post.sub,
         theme,
-        w: meta.w,
-        h: meta.h,
+        w: 1080,
+        h: postH,
         kickerText: CATEGORY_META[post.category].kicker,
       })
     } else {
-      const meta = FORMAT_META[format]
       drawPost(c, {
         kickerText: CATEGORY_META[post.category].kicker,
         headline: post.headline,
         sub: post.sub,
         theme,
-        w: meta.w,
-        h: meta.h,
+        w: 1080,
+        h: postH,
         vAlign,
       })
     }
-  }, [post, slideIdx, theme, format, img, visual, vAlign])
+  }, [post, slideIdx, theme, format, img, visual, vAlign, postH])
 
   const newIdea = () => {
     setPost(generatePost(randomIdea(category, post.ideaId), format, theme))
@@ -141,9 +143,9 @@ export default function GeneratorPage({ request }: { request: GeneratorRequest |
         setTimeout(() => {
           const tmp = document.createElement('canvas')
           if ((s.withShot || s.kind === 'shot') && img) {
-            drawMockup(tmp, { img, headline: s.heading, sub: s.body ?? '', theme, w: 1080, h: 1350, kickerText: CATEGORY_META[post.category].kicker })
+            drawMockup(tmp, { img, headline: s.heading, sub: s.body ?? '', theme, w: 1080, h: postH, kickerText: CATEGORY_META[post.category].kicker })
           } else {
-            drawSlide(tmp, s, theme, CATEGORY_META[post.category].kicker)
+            drawSlide(tmp, s, theme, CATEGORY_META[post.category].kicker, postH)
           }
           downloadCanvas(tmp, `${post.ideaId}-slide-${i + 1}`)
         }, i * 350)
@@ -183,6 +185,13 @@ export default function GeneratorPage({ request }: { request: GeneratorRequest |
             <div className="row">
               <Seg options={CATS} value={category} onChange={changeCat} />
               <Seg options={FORMATS} value={format} onChange={changeFormat} />
+              {format !== 'story' && (
+                <Seg
+                  options={[{ value: '45', label: '4:5' }, { value: '11', label: '1:1 Quadrat' }]}
+                  value={aspect}
+                  onChange={(a: '45' | '11') => setAspect(a)}
+                />
+              )}
               <Seg options={[{ value: 'dark', label: 'Dark' }, { value: 'light', label: 'Light' }]} value={theme} onChange={(t: PostTheme) => setTheme(t)} />
             </div>
             <div className="row">
