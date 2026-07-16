@@ -91,6 +91,8 @@ export interface TikTokSlide {
   note: string
   kind?: 'text' | 'shot'
   align?: VAlign
+  // Screenshot-Slides: eigenes Bild pro Slide (ID aus der Screenshot-Bibliothek)
+  shotId?: string
 }
 
 export interface TikTokConcept {

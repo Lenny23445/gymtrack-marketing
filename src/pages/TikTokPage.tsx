@@ -5,6 +5,7 @@ import { findIdea, randomIdea } from '../data/ideas'
 import { generateTikTok, tiktokAsText, TREND_LINKS } from '../data/tiktok'
 import { drawTikTokSlide, drawTikTokShot, downloadCanvas, canvasThumb } from '../lib/canvas'
 import { addPlanned } from '../lib/store'
+import { loadImage, useShots } from '../lib/screenshots'
 import { CopyButton, Seg } from '../components/ui'
 import { ScreenshotPicker } from '../components/ScreenshotPicker'
 
@@ -21,25 +22,47 @@ export default function TikTokPage() {
   const [concept, setConcept] = useState<TikTokConcept>(() => generateTikTok(randomIdea('problem')))
   const [slideIdx, setSlideIdx] = useState(0)
   const [saved, setSaved] = useState(false)
-  const [img, setImg] = useState<HTMLImageElement | null>(null)
-  const [pickId, setPickId] = useState<string | null>(null)
+  // Screenshot-Bibliothek + geladene Bilder pro ID. Jeder Slide referenziert
+  // sein eigenes Bild ueber shotId — so kann jeder Slide ein anderes Bild haben.
+  const { shots, add, remove } = useShots()
+  const [imgCache, setImgCache] = useState<Record<string, HTMLImageElement>>({})
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   const idea = findIdea(concept.ideaId)
   const title = idea?.title ?? 'TikTok Slides'
   const slides = concept.slides
+  const activeIdx = Math.min(slideIdx, Math.max(0, slides.length - 1))
+
+  // Alle Bibliotheks-Bilder einmal vorladen, damit Slides sofort zeichnen koennen.
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      for (const sh of shots) {
+        if (imgCache[sh.id]) continue
+        try {
+          const im = await loadImage(sh.dataUrl)
+          if (!cancelled) setImgCache(prev => (prev[sh.id] ? prev : { ...prev, [sh.id]: im }))
+        } catch {
+          /* kaputtes Bild ueberspringen */
+        }
+      }
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shots])
 
   const drawOne = (c: HTMLCanvasElement, s: TikTokSlide) => {
-    if (s.kind === 'shot' && img) drawTikTokShot(c, img, s.text, theme)
+    const im = s.shotId ? imgCache[s.shotId] : undefined
+    if (s.kind === 'shot' && im) drawTikTokShot(c, im, s.text, theme)
     else drawTikTokSlide(c, s.text, theme, s.align ?? 'center')
   }
 
   useEffect(() => {
     const c = canvasRef.current
     if (!c || slides.length === 0) return
-    drawOne(c, slides[Math.min(slideIdx, slides.length - 1)])
+    drawOne(c, slides[activeIdx])
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [concept, slideIdx, theme, img])
+  }, [concept, slideIdx, theme, imgCache])
 
   const setSlides = (next: TikTokSlide[]) => {
     setConcept({ ...concept, slides: next })
@@ -49,6 +72,13 @@ export default function TikTokPage() {
 
   const updSlide = (i: number, patch: Partial<TikTokSlide>) =>
     setSlides(slides.map((s, n) => (n === i ? { ...s, ...patch } : s)))
+
+  // Bild einem Slide zuweisen (aus Bibliothek-Picker oder Inline-Auswahl).
+  // Gleiche ID nochmal = abwaehlen. Bild-Zuweisung macht den Slide zum Shot-Slide.
+  const assignShot = (i: number, id: string | null) => {
+    if (!id || slides[i]?.shotId === id) updSlide(i, { shotId: undefined })
+    else updSlide(i, { shotId: id, kind: 'shot' })
+  }
 
   const moveSlide = (i: number, dir: -1 | 1) => {
     const j = i + dir
@@ -118,7 +148,7 @@ export default function TikTokPage() {
     <>
       <div className="page-header">
         <h1>TikTok Slides</h1>
-        <p>Foto-Slides im 9:16-Format nach TikTok-Viral-Logik. Jeder Slide ist frei editierbar: Text, Position, Reihenfolge, Anzahl — plus App-Screenshot-Slides und Live-Trend-Links.</p>
+        <p>Foto-Slides im 9:16-Format nach TikTok-Viral-Logik. Jeder Slide ist frei editierbar: Text, Position, Reihenfolge, Anzahl — plus App-Screenshot-Slides mit eigenem Bild pro Slide und Live-Trend-Links.</p>
       </div>
       <div className="stack">
         <div className="card">
@@ -142,14 +172,14 @@ export default function TikTokPage() {
         <div className="split">
           <div className="stack">
             <div className="card">
-              <h3>Vorschau · 1080 × 1920 · Slide {Math.min(slideIdx, slides.length - 1) + 1}/{slides.length}</h3>
+              <h3>Vorschau · 1080 × 1920 · Slide {activeIdx + 1}/{slides.length}</h3>
               <canvas ref={canvasRef} className="preview-canvas" style={{ maxWidth: 300, margin: '0 auto' }} />
               {slides.length > 1 && (
                 <div className="slide-nav">
                   <button className="btn btn-sm" onClick={() => setSlideIdx(i => Math.max(0, i - 1))}>←</button>
                   <div className="slide-dots">
                     {slides.map((_, i) => (
-                      <span key={i} className={i === slideIdx ? 'on' : ''} onClick={() => setSlideIdx(i)} />
+                      <span key={i} className={i === activeIdx ? 'on' : ''} onClick={() => setSlideIdx(i)} />
                     ))}
                   </div>
                   <button className="btn btn-sm" onClick={() => setSlideIdx(i => Math.min(slides.length - 1, i + 1))}>→</button>
@@ -162,7 +192,12 @@ export default function TikTokPage() {
             </div>
             <div className="card">
               <h3>Screenshot-Bibliothek</h3>
-              <ScreenshotPicker selectedId={pickId} onSelect={(image, id) => { setImg(image); setPickId(id) }} hint="Für Screenshot-Slides: erst hier wählen, dann „+ Screenshot-Slide“." />
+              <ScreenshotPicker
+                selectedId={slides[activeIdx]?.shotId ?? null}
+                onSelect={(_img, id) => assignShot(activeIdx, id)}
+                library={{ shots, add, remove }}
+                hint={`Auswahl gilt für den angezeigten Slide ${activeIdx + 1}. Pro Slide rechts ein eigenes Bild wählbar. Upload auch mit ⌘V.`}
+              />
             </div>
             <div className="card">
               <h3>Live-Trends auf TikTok</h3>
@@ -208,7 +243,28 @@ export default function TikTokPage() {
                     value={s.text}
                     onChange={e => updSlide(i, { text: e.target.value })}
                   />
-                  <p className="hint" style={{ marginTop: 4 }}>{s.note}{s.kind === 'shot' && !img ? ' — Noch kein Screenshot gewählt: bis dahin als Text-Slide gerendert.' : ''}</p>
+                  {s.kind === 'shot' && (
+                    <div style={{ marginTop: 8 }}>
+                      <p className="hint" style={{ marginBottom: 6 }}>Bild für diesen Slide:</p>
+                      {shots.length === 0 ? (
+                        <p className="hint">Noch keine Screenshots — lade links in der Bibliothek welche hoch.</p>
+                      ) : (
+                        <div className="shot-grid">
+                          {shots.map(sh => (
+                            <div
+                              key={sh.id}
+                              className={'shot-tile' + (sh.id === s.shotId ? ' on' : '')}
+                              onClick={() => assignShot(i, sh.id)}
+                              title={sh.name}
+                            >
+                              <img src={sh.dataUrl} alt={sh.name} />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <p className="hint" style={{ marginTop: 4 }}>{s.note}{s.kind === 'shot' && !s.shotId ? ' — Noch kein Bild gewählt: bis dahin als Text-Slide gerendert.' : ''}</p>
                 </div>
               ))}
               <div className="row" style={{ marginTop: 12 }}>

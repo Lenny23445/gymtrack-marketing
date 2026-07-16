@@ -1,19 +1,26 @@
 import { useEffect, useState } from 'react'
 import { loadImage, useShots } from '../lib/screenshots'
+import type { Shot } from '../lib/screenshots'
 
 // Geteilter Picker: laedt/verwaltet die Screenshot-Bibliothek und liefert das
 // gewaehlte Bild als HTMLImageElement zum Zeichnen auf Canvas.
 // Upload per Button oder ⌘V. Auswahl togglt (nochmal klicken = abwaehlen).
+// library: optional eine bereits geladene Bibliothek von aussen reinreichen,
+// damit mehrere Picker auf derselben Seite denselben Stand teilen (z. B. TikTok:
+// pro Slide ein eigenes Bild). Ohne library nutzt der Picker seinen eigenen Hook.
 export function ScreenshotPicker({
   selectedId,
   onSelect,
   hint,
+  library,
 }: {
   selectedId: string | null
   onSelect: (img: HTMLImageElement | null, id: string | null) => void
   hint?: string
+  library?: { shots: Shot[]; add: (file: File) => Promise<Shot>; remove: (id: string) => Promise<void> }
 }) {
-  const { shots, add, remove } = useShots()
+  const own = useShots()
+  const { shots, add, remove } = library ?? own
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
