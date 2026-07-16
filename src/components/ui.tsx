@@ -37,6 +37,39 @@ export function Seg<T extends string>({
   )
 }
 
+const ACCENTS: { label: string; value: string }[] = [
+  { label: 'Blau', value: '#0A84FF' },
+  { label: 'Grün', value: '#30D158' },
+  { label: 'Rot', value: '#FF453A' },
+  { label: 'Orange', value: '#FF9F0A' },
+  { label: 'Violett', value: '#BF5AF2' },
+  { label: 'Pink', value: '#FF375F' },
+  { label: 'Gelb', value: '#FFD60A' },
+]
+
+// Wählt die Highlight-Farbe für Passagen, die im Text mit *Sternchen* markiert sind.
+export function AccentPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="accent-picker">
+      <span className="hint">Highlight:</span>
+      {ACCENTS.map(a => (
+        <button
+          key={a.value}
+          type="button"
+          className={'accent-dot' + (value.toLowerCase() === a.value.toLowerCase() ? ' on' : '')}
+          style={{ background: a.value }}
+          title={a.label}
+          onClick={() => onChange(a.value)}
+        />
+      ))}
+      <label className="accent-custom" title="Eigene Farbe">
+        <input type="color" value={value} onChange={e => onChange(e.target.value)} />
+      </label>
+      <span className="hint">Passage im Text mit *Sternchen* markieren</span>
+    </div>
+  )
+}
+
 export function ScoreCard({ score }: { score: Score }) {
   return (
     <div className="card">

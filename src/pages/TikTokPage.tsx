@@ -3,10 +3,10 @@ import { CATEGORY_META } from '../lib/types'
 import type { Category, PostTheme, TikTokConcept, TikTokSlide, VAlign } from '../lib/types'
 import { findIdea, randomIdea } from '../data/ideas'
 import { generateTikTok, tiktokAsText, TREND_LINKS } from '../data/tiktok'
-import { drawTikTokSlide, drawTikTokShot, downloadCanvas, canvasThumb } from '../lib/canvas'
+import { drawTikTokSlide, drawTikTokShot, downloadCanvas, canvasThumb, DEFAULT_ACCENT, stripRich } from '../lib/canvas'
 import { addPlanned } from '../lib/store'
 import { loadImage, useShots } from '../lib/screenshots'
-import { CopyButton, Seg } from '../components/ui'
+import { CopyButton, Seg, AccentPicker } from '../components/ui'
 import { ScreenshotPicker } from '../components/ScreenshotPicker'
 
 const CATS = (Object.keys(CATEGORY_META) as Category[]).map(c => ({ value: c, label: CATEGORY_META[c].label }))
@@ -19,6 +19,7 @@ const ALIGNS: { value: VAlign; label: string }[] = [
 export default function TikTokPage() {
   const [cat, setCat] = useState<Category>('problem')
   const [theme, setTheme] = useState<PostTheme>('dark')
+  const [accent, setAccent] = useState(DEFAULT_ACCENT)
   const [concept, setConcept] = useState<TikTokConcept>(() => generateTikTok(randomIdea('problem')))
   const [slideIdx, setSlideIdx] = useState(0)
   const [saved, setSaved] = useState(false)
@@ -32,6 +33,8 @@ export default function TikTokPage() {
   const title = idea?.title ?? 'TikTok Slides'
   const slides = concept.slides
   const activeIdx = Math.min(slideIdx, Math.max(0, slides.length - 1))
+  // Kopier-/Planner-Text ohne *Sternchen*-Markup (Highlight ist nur fuers Bild).
+  const conceptText = tiktokAsText({ ...concept, slides: slides.map(s => ({ ...s, text: stripRich(s.text) })) }, title)
 
   // Alle Bibliotheks-Bilder einmal vorladen, damit Slides sofort zeichnen koennen.
   useEffect(() => {
@@ -53,8 +56,8 @@ export default function TikTokPage() {
 
   const drawOne = (c: HTMLCanvasElement, s: TikTokSlide) => {
     const im = s.shotId ? imgCache[s.shotId] : undefined
-    if (s.kind === 'shot' && im) drawTikTokShot(c, im, s.text, theme)
-    else drawTikTokSlide(c, s.text, theme, s.align ?? 'center')
+    if (s.kind === 'shot' && im) drawTikTokShot(c, im, s.text, theme, accent)
+    else drawTikTokSlide(c, s.text, theme, s.align ?? 'center', accent)
   }
 
   useEffect(() => {
@@ -62,7 +65,7 @@ export default function TikTokPage() {
     if (!c || slides.length === 0) return
     drawOne(c, slides[activeIdx])
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [concept, slideIdx, theme, imgCache])
+  }, [concept, slideIdx, theme, imgCache, accent])
 
   const setSlides = (next: TikTokSlide[]) => {
     setConcept({ ...concept, slides: next })
@@ -136,7 +139,7 @@ export default function TikTokPage() {
       format: 'reel',
       category: concept.category,
       headline: 'TikTok · ' + title,
-      caption: tiktokAsText(concept, title),
+      caption: conceptText,
       hashtags: concept.hashtags,
       thumb: canvasRef.current ? canvasThumb(canvasRef.current) : undefined,
       createdAt: Date.now(),
@@ -216,6 +219,7 @@ export default function TikTokPage() {
           <div className="stack">
             <div className="card">
               <h3>Slides bearbeiten · Hook-Typ: {concept.hookType}</h3>
+              <AccentPicker value={accent} onChange={setAccent} />
               {slides.map((s, i) => (
                 <div key={i} style={{ borderBottom: i < slides.length - 1 ? '1px solid var(--border)' : 'none', padding: '12px 0' }}>
                   <div className="row" style={{ justifyContent: 'space-between', marginBottom: 8 }}>
@@ -299,7 +303,7 @@ export default function TikTokPage() {
               </ul>
               <p className="hint" style={{ marginTop: 8 }}>Tipp: {concept.postingTip}</p>
               <div className="row" style={{ marginTop: 12 }}>
-                <CopyButton text={tiktokAsText(concept, title)} label="Komplettes Konzept kopieren" primary />
+                <CopyButton text={conceptText} label="Komplettes Konzept kopieren" primary />
               </div>
             </div>
           </div>

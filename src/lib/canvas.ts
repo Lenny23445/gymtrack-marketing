@@ -63,6 +63,127 @@ export function fitText(
   return { size: min, lines: wrap(ctx, text, maxWidth).slice(0, maxLines) }
 }
 
+// ── Rich-Text: Inline-Markup *so* faerbt einzelne Passagen in einer Akzentfarbe ──
+// Genutzt in allen Render-Pfaden (Post, Slide, Mockup, TikTok, Video). Marketing
+// schreibt z.B. "Logge Saetze in *Sekunden*" — "Sekunden" wird dann farbig gerendert.
+
+export const DEFAULT_ACCENT = '#0A84FF'
+
+export interface RichTok { text: string; hl: boolean; spaceBefore: boolean }
+
+// Parst *…*-Paare zu Segmenten (Markup entfernt). Ein einzelnes * ohne Partner
+// bleibt Literal, Zeilenumbrueche brechen ein Highlight nicht ueber die Zeile.
+function parseRich(raw: string): { text: string; hl: boolean }[] {
+  const segs: { text: string; hl: boolean }[] = []
+  const re = /\*([^*\n]+)\*/g
+  let last = 0
+  let m: RegExpExecArray | null
+  while ((m = re.exec(raw))) {
+    if (m.index > last) segs.push({ text: raw.slice(last, m.index), hl: false })
+    segs.push({ text: m[1], hl: true })
+    last = m.index + m[0].length
+  }
+  if (last < raw.length) segs.push({ text: raw.slice(last), hl: false })
+  return segs
+}
+
+// Markup entfernen — fuer Captions / Copy, wo die Sternchen nicht auftauchen sollen.
+export function stripRich(raw: string): string {
+  return raw.replace(/\*([^*\n]+)\*/g, '$1')
+}
+
+// In Wort-Tokens mit Highlight-Flag zerlegen (Highlight auf Wortgrenzen).
+export function tokenizeRich(raw: string): RichTok[] {
+  const toks: RichTok[] = []
+  let pendingSpace = false
+  let started = false
+  for (const seg of parseRich(raw)) {
+    for (const part of seg.text.split(/(\s+)/)) {
+      if (part === '') continue
+      if (/^\s+$/.test(part)) { pendingSpace = true; continue }
+      toks.push({ text: part, hl: seg.hl, spaceBefore: started && pendingSpace })
+      pendingSpace = false
+      started = true
+    }
+  }
+  return toks
+}
+
+function richLineWidth(ctx: CanvasRenderingContext2D, line: RichTok[]): number {
+  const spaceW = ctx.measureText(' ').width
+  let w = 0
+  line.forEach((t, i) => {
+    if (i > 0 && t.spaceBefore) w += spaceW
+    w += ctx.measureText(t.text).width
+  })
+  return w
+}
+
+function richWrap(ctx: CanvasRenderingContext2D, toks: RichTok[], maxWidth: number): RichTok[][] {
+  const spaceW = ctx.measureText(' ').width
+  const lines: RichTok[][] = []
+  let line: RichTok[] = []
+  let w = 0
+  for (const t of toks) {
+    const tw = ctx.measureText(t.text).width
+    const lead = line.length > 0 && t.spaceBefore ? spaceW : 0
+    if (line.length > 0 && w + lead + tw > maxWidth) {
+      lines.push(line)
+      line = [{ ...t, spaceBefore: false }]
+      w = tw
+    } else {
+      line.push(t)
+      w += lead + tw
+    }
+  }
+  if (line.length) lines.push(line)
+  return lines
+}
+
+// Wie fitText, aber liefert Zeilen als Highlight-Segmente statt Strings.
+export function richFit(
+  ctx: CanvasRenderingContext2D,
+  raw: string,
+  maxWidth: number,
+  base: number,
+  min: number,
+  maxLines: number,
+  weight: number,
+): { size: number; lines: RichTok[][] } {
+  const toks = tokenizeRich(raw)
+  for (let size = base; size >= min; size -= 4) {
+    ctx.font = `${weight} ${size}px ${FONT}`
+    const lines = richWrap(ctx, toks, maxWidth)
+    if (lines.length <= maxLines) return { size, lines }
+  }
+  ctx.font = `${weight} ${min}px ${FONT}`
+  return { size: min, lines: richWrap(ctx, toks, maxWidth).slice(0, maxLines) }
+}
+
+// Zeichnet eine Zeile mit Highlight-Segmenten. Font vorher setzen.
+// align='left': x = linke Kante · align='center': x = Mittelpunkt.
+export function drawRichLine(
+  ctx: CanvasRenderingContext2D,
+  line: RichTok[],
+  x: number,
+  y: number,
+  baseColor: string,
+  accent: string,
+  align: 'left' | 'center' = 'left',
+) {
+  const spaceW = ctx.measureText(' ').width
+  let cx = align === 'center' ? x - richLineWidth(ctx, line) / 2 : x
+  const prevAlign = ctx.textAlign
+  ctx.textAlign = 'left'
+  line.forEach((t, i) => {
+    if (i > 0 && t.spaceBefore) cx += spaceW
+    ctx.fillStyle = t.hl ? accent : baseColor
+    ctx.fillText(t.text, cx, y)
+    cx += ctx.measureText(t.text).width
+  })
+  ctx.textAlign = prevAlign
+}
+
 function kicker(ctx: CanvasRenderingContext2D, text: string, p: Palette, x: number, y: number) {
   ctx.font = `600 30px ${FONT}`
   ctx.fillStyle = p.muted
@@ -103,10 +224,12 @@ export interface PostDrawSpec {
   h: number
   pageIndicator?: string
   vAlign?: 'top' | 'center' | 'bottom'
+  accent?: string
 }
 
 export function drawPost(canvas: HTMLCanvasElement, spec: PostDrawSpec) {
   const p = PALETTES[spec.theme]
+  const accent = spec.accent ?? DEFAULT_ACCENT
   const ctx = ctx2d(canvas, spec.w, spec.h)
   const contentW = spec.w - PAD * 2
 
@@ -123,9 +246,9 @@ export function drawPost(canvas: HTMLCanvasElement, spec: PostDrawSpec) {
     ctx.textAlign = 'left'
   }
 
-  const head = fitText(ctx, spec.headline, contentW, spec.h > 1500 ? 104 : 92, 56, 5, 700)
+  const head = richFit(ctx, spec.headline, contentW, spec.h > 1500 ? 104 : 92, 56, 5, 700)
   const headLH = head.size * 1.12
-  const subFit = fitText(ctx, spec.sub, contentW, 42, 32, 5, 400)
+  const subFit = richFit(ctx, spec.sub, contentW, 42, 32, 5, 400)
   const subLH = subFit.size * 1.42
   const gap = 56
   const blockH = head.lines.length * headLH + gap + subFit.lines.length * subLH
@@ -135,24 +258,22 @@ export function drawPost(canvas: HTMLCanvasElement, spec: PostDrawSpec) {
   else y = (spec.h - blockH) / 2 + head.size * 0.8
 
   ctx.font = `700 ${head.size}px ${FONT}`
-  ctx.fillStyle = p.fg
   for (const line of head.lines) {
-    ctx.fillText(line, PAD, y)
+    drawRichLine(ctx, line, PAD, y, p.fg, accent)
     y += headLH
   }
 
   y += gap - headLH + subLH
   ctx.font = `400 ${subFit.size}px ${FONT}`
-  ctx.fillStyle = p.muted
   for (const line of subFit.lines) {
-    ctx.fillText(line, PAD, y)
+    drawRichLine(ctx, line, PAD, y, p.muted, accent)
     y += subLH
   }
 
   footer(ctx, p, spec.w, spec.h)
 }
 
-export function drawSlide(canvas: HTMLCanvasElement, slide: Slide, theme: PostTheme, kickerText: string, h = 1350) {
+export function drawSlide(canvas: HTMLCanvasElement, slide: Slide, theme: PostTheme, kickerText: string, h = 1350, accent = DEFAULT_ACCENT) {
   const p = PALETTES[theme]
   const w = 1080
   const ctx = ctx2d(canvas, w, h)
@@ -171,27 +292,25 @@ export function drawSlide(canvas: HTMLCanvasElement, slide: Slide, theme: PostTh
   }
 
   const headBase = slide.kind === 'cover' ? 96 : 76
-  const head = fitText(ctx, slide.heading, contentW, headBase, 48, 5, 700)
+  const head = richFit(ctx, slide.heading, contentW, headBase, 48, 5, 700)
   const headLH = head.size * 1.12
-  const bodyFit = slide.body ? fitText(ctx, slide.body, contentW, 42, 32, 5, 400) : null
+  const bodyFit = slide.body ? richFit(ctx, slide.body, contentW, 42, 32, 5, 400) : null
   const bodyLH = bodyFit ? bodyFit.size * 1.42 : 0
   const gap = slide.body ? 52 : 0
   const blockH = head.lines.length * headLH + gap + (bodyFit ? bodyFit.lines.length * bodyLH : 0)
   let y = slide.kind === 'point' ? Math.round(h * 0.415) : (h - blockH) / 2 + head.size * 0.8
 
   ctx.font = `700 ${head.size}px ${FONT}`
-  ctx.fillStyle = p.fg
   for (const line of head.lines) {
-    ctx.fillText(line, PAD, y)
+    drawRichLine(ctx, line, PAD, y, p.fg, accent)
     y += headLH
   }
 
   if (bodyFit) {
     y += gap - headLH + bodyLH
     ctx.font = `400 ${bodyFit.size}px ${FONT}`
-    ctx.fillStyle = p.muted
     for (const line of bodyFit.lines) {
-      ctx.fillText(line, PAD, y)
+      drawRichLine(ctx, line, PAD, y, p.muted, accent)
       y += bodyLH
     }
   }
@@ -207,6 +326,7 @@ export interface MockupSpec {
   w?: number
   h?: number
   kickerText?: string
+  accent?: string
 }
 
 export function roundedPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
@@ -224,6 +344,7 @@ export function drawMockup(canvas: HTMLCanvasElement, spec: MockupSpec) {
   const w = spec.w ?? 1080
   const h = spec.h ?? 1350
   const p = PALETTES[spec.theme]
+  const accent = spec.accent ?? DEFAULT_ACCENT
   const ctx = ctx2d(canvas, w, h)
   const contentW = w - PAD * 2
 
@@ -232,21 +353,19 @@ export function drawMockup(canvas: HTMLCanvasElement, spec: MockupSpec) {
 
   kicker(ctx, spec.kickerText ?? 'MY GYM TRACK', p, PAD, PAD + 30)
 
-  const head = fitText(ctx, spec.headline, contentW, 76, 48, 2, 700)
+  const head = richFit(ctx, spec.headline, contentW, 76, 48, 2, 700)
   let y = PAD + 130
   ctx.font = `700 ${head.size}px ${FONT}`
-  ctx.fillStyle = p.fg
   for (const line of head.lines) {
-    ctx.fillText(line, PAD, y)
+    drawRichLine(ctx, line, PAD, y, p.fg, accent)
     y += head.size * 1.12
   }
 
-  const subFit = fitText(ctx, spec.sub, contentW, 40, 30, 2, 400)
+  const subFit = richFit(ctx, spec.sub, contentW, 40, 30, 2, 400)
   y += 16
   ctx.font = `400 ${subFit.size}px ${FONT}`
-  ctx.fillStyle = p.muted
   for (const line of subFit.lines) {
-    ctx.fillText(line, PAD, y)
+    drawRichLine(ctx, line, PAD, y, p.muted, accent)
     y += subFit.size * 1.4
   }
 
@@ -295,6 +414,7 @@ export function drawTikTokSlide(
   text: string,
   theme: PostTheme,
   vAlign: 'top' | 'center' | 'bottom' = 'center',
+  accent = DEFAULT_ACCENT,
 ) {
   const w = 1080
   const h = 1920
@@ -305,12 +425,14 @@ export function drawTikTokSlide(
   ctx.fillStyle = p.bg
   ctx.fillRect(0, 0, w, h)
 
-  // manuelle Zeilen; groesste Schrift finden, bei der breiteste Zeile passt
+  // manuelle Zeilen (mit Highlight-Segmenten); groesste Schrift finden, bei der
+  // die breiteste Zeile passt. Markup faerbt Passagen, misst aber ohne Sternchen.
   const rawLines = text.split('\n')
+  const richLines = rawLines.map(l => tokenizeRich(l))
   let size = 132
   for (; size >= 60; size -= 4) {
     ctx.font = `700 ${size}px ${FONT}`
-    const widest = Math.max(...rawLines.map(l => ctx.measureText(l).width))
+    const widest = Math.max(0, ...richLines.map(l => richLineWidth(ctx, l)))
     const totalH = rawLines.length * size * 1.16
     if (widest <= contentW && totalH <= h - 460) break
   }
@@ -322,13 +444,10 @@ export function drawTikTokSlide(
   else y = (h - blockH) / 2 + size * 0.78
 
   ctx.font = `700 ${size}px ${FONT}`
-  ctx.fillStyle = p.fg
-  ctx.textAlign = 'center'
-  for (const line of rawLines) {
-    if (line.trim()) ctx.fillText(line, w / 2, y)
+  for (const line of richLines) {
+    if (line.length) drawRichLine(ctx, line, w / 2, y, p.fg, accent, 'center')
     y += lh
   }
-  ctx.textAlign = 'left'
 
   // dezente Brand-Signatur unten mittig (kein Sound, kein Label)
   ctx.font = `700 34px ${FONT}`
@@ -340,7 +459,7 @@ export function drawTikTokSlide(
 
 // TikTok Screenshot-Slide: Hook oben, kompletter App-Screenshot im Phone-Frame
 // darunter — zum Praesentieren der App. Clean, keine Meta-Labels.
-export function drawTikTokShot(canvas: HTMLCanvasElement, img: HTMLImageElement, headline: string, theme: PostTheme) {
+export function drawTikTokShot(canvas: HTMLCanvasElement, img: HTMLImageElement, headline: string, theme: PostTheme, accent = DEFAULT_ACCENT) {
   const w = 1080
   const h = 1920
   const p = PALETTES[theme]
@@ -350,16 +469,13 @@ export function drawTikTokShot(canvas: HTMLCanvasElement, img: HTMLImageElement,
   ctx.fillStyle = p.bg
   ctx.fillRect(0, 0, w, h)
 
-  const head = fitText(ctx, headline, contentW, 82, 50, 3, 700)
+  const head = richFit(ctx, headline, contentW, 82, 50, 3, 700)
   let y = PAD + 150
   ctx.font = `700 ${head.size}px ${FONT}`
-  ctx.fillStyle = p.fg
-  ctx.textAlign = 'center'
   for (const line of head.lines) {
-    ctx.fillText(line, w / 2, y)
+    drawRichLine(ctx, line, w / 2, y, p.fg, accent, 'center')
     y += head.size * 1.14
   }
-  ctx.textAlign = 'left'
 
   // Geraet: vollstaendig sichtbar (nicht angeschnitten), zwischen Headline und Brand
   const deviceTop = y + 56

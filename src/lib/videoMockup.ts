@@ -1,5 +1,5 @@
 import type { PostTheme } from './types'
-import { PALETTES, fitText, roundedPath } from './canvas'
+import { PALETTES, richFit, drawRichLine, roundedPath, DEFAULT_ACCENT } from './canvas'
 
 // Video-Mockup: App-Screen-Recording laeuft im iPhone-Rahmen auf ruhigem
 // Studio-Hintergrund. Preview via rAF, Export via captureStream + MediaRecorder.
@@ -14,35 +14,33 @@ export interface VideoFrameOpts {
   h: number
   headline: string
   sub: string
+  accent?: string
 }
 
 export function drawVideoFrame(ctx: CanvasRenderingContext2D, o: VideoFrameOpts) {
   const p = PALETTES[o.theme]
+  const accent = o.accent ?? DEFAULT_ACCENT
   const { w, h } = o
   const contentW = w - PAD * 2
 
   ctx.fillStyle = p.bg
   ctx.fillRect(0, 0, w, h)
 
-  // Headline + Subline zentriert oben
-  const head = fitText(ctx, o.headline, contentW, h > 1500 ? 80 : 72, 44, 2, 700)
+  // Headline + Subline zentriert oben (Markup *…* faerbt Passagen)
+  const head = richFit(ctx, o.headline, contentW, h > 1500 ? 80 : 72, 44, 2, 700)
   let y = PAD + 60 + head.size * 0.8
   ctx.font = `700 ${head.size}px ${FONT}`
-  ctx.fillStyle = p.fg
-  ctx.textAlign = 'center'
   for (const line of head.lines) {
-    ctx.fillText(line, w / 2, y)
+    drawRichLine(ctx, line, w / 2, y, p.fg, accent, 'center')
     y += head.size * 1.12
   }
-  const subFit = fitText(ctx, o.sub, contentW, 38, 28, 2, 400)
+  const subFit = richFit(ctx, o.sub, contentW, 38, 28, 2, 400)
   y += 10
   ctx.font = `400 ${subFit.size}px ${FONT}`
-  ctx.fillStyle = p.muted
   for (const line of subFit.lines) {
-    ctx.fillText(line, w / 2, y)
+    drawRichLine(ctx, line, w / 2, y, p.muted, accent, 'center')
     y += subFit.size * 1.4
   }
-  ctx.textAlign = 'left'
 
   // Geraet: komplett sichtbar zwischen Text und Brand-Zeile
   const vw = o.video.videoWidth || 390

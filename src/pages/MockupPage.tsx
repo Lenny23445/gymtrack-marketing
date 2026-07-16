@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PostTheme } from '../lib/types'
-import { drawMockup, downloadCanvas, canvasThumb } from '../lib/canvas'
+import { drawMockup, downloadCanvas, canvasThumb, DEFAULT_ACCENT, stripRich } from '../lib/canvas'
 import { drawVideoFrame, recordVideoMockup, downloadBlob } from '../lib/videoMockup'
 import { generateHashtags } from '../data/hashtags'
 import { CTAS } from '../data/ideas'
 import { hashtagBlock } from '../lib/generator'
 import { addPlanned } from '../lib/store'
-import { CopyButton, Seg } from '../components/ui'
+import { CopyButton, Seg, AccentPicker } from '../components/ui'
 import { ScreenshotPicker } from '../components/ScreenshotPicker'
 
 interface TextIdea { h: string; s: string }
@@ -51,6 +51,7 @@ export default function MockupPage() {
   const [headline, setHeadline] = useState(TYPES[0].texts[0].h)
   const [sub, setSub] = useState(TYPES[0].texts[0].s)
   const [theme, setTheme] = useState<PostTheme>('dark')
+  const [accent, setAccent] = useState(DEFAULT_ACCENT)
   const [saved, setSaved] = useState(false)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rafRef = useRef(0)
@@ -67,8 +68,8 @@ export default function MockupPage() {
   // Bild-Vorschau
   useEffect(() => {
     if (mode !== 'image' || !img || !canvasRef.current) return
-    drawMockup(canvasRef.current, { img, headline, sub, theme })
-  }, [mode, img, headline, sub, theme])
+    drawMockup(canvasRef.current, { img, headline, sub, theme, accent })
+  }, [mode, img, headline, sub, theme, accent])
 
   // Video-Vorschau: laufender rAF-Loop
   useEffect(() => {
@@ -83,12 +84,12 @@ export default function MockupPage() {
     video.muted = true
     video.play().catch(() => {})
     const loop = () => {
-      if (!rendering) drawVideoFrame(ctx, { video, theme, w, h, headline, sub })
+      if (!rendering) drawVideoFrame(ctx, { video, theme, w, h, headline, sub, accent })
       rafRef.current = requestAnimationFrame(loop)
     }
     loop()
     return () => cancelAnimationFrame(rafRef.current)
-  }, [mode, video, vidFormat, theme, headline, sub, rendering])
+  }, [mode, video, vidFormat, theme, headline, sub, rendering, accent])
 
   const onVideoFile = (file: File | undefined) => {
     if (!file) return
@@ -109,7 +110,7 @@ export default function MockupPage() {
     try {
       const w = 1080
       const h = vidFormat === 'reel' ? 1920 : 1350
-      const { blob, ext } = await recordVideoMockup({ video, theme, w, h, headline, sub }, setProgress)
+      const { blob, ext } = await recordVideoMockup({ video, theme, w, h, headline, sub, accent }, setProgress)
       downloadBlob(blob, `mockup-video-${typeId}.${ext}`)
     } finally {
       setRendering(false)
@@ -119,7 +120,7 @@ export default function MockupPage() {
   }
 
   const cta = CTAS[0]
-  const caption = `${headline}\n\n${sub}\n\n${cta}\n\n${hashtagBlock(generateHashtags('feature'))}`
+  const caption = `${stripRich(headline)}\n\n${stripRich(sub)}\n\n${cta}\n\n${hashtagBlock(generateHashtags('feature'))}`
 
   return (
     <>
@@ -159,7 +160,7 @@ export default function MockupPage() {
                       status: 'draft',
                       format: 'mockup',
                       category: 'feature',
-                      headline,
+                      headline: stripRich(headline),
                       caption,
                       hashtags: generateHashtags('feature'),
                       thumb: canvasRef.current ? canvasThumb(canvasRef.current) : undefined,
@@ -203,6 +204,7 @@ export default function MockupPage() {
               <div className="row" style={{ marginBottom: 14 }}>
                 <Seg options={TYPES.map(t => ({ value: t.id, label: t.label }))} value={typeId} onChange={id => applyType(id, 0)} />
               </div>
+              <AccentPicker value={accent} onChange={setAccent} />
               <label className="field-label">Headline</label>
               <input type="text" value={headline} onChange={e => setHeadline(e.target.value)} />
               <label className="field-label" style={{ marginTop: 12 }}>Beschreibung</label>
