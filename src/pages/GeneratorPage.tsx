@@ -1,25 +1,29 @@
 import { useEffect, useRef, useState } from 'react'
-import type { GeneratorRequest } from '../App'
+import type { GeneratorRequest, EditRequest } from '../App'
 import { CATEGORY_META, FORMAT_META } from '../lib/types'
 import type { Category, GeneratedPost, PostFormat, PostTheme, Slide, VAlign } from '../lib/types'
 import { findIdea, randomIdea } from '../data/ideas'
 import { generatePost, fullCaption, hashtagBlock } from '../lib/generator'
 import { scorePost } from '../lib/scoring'
 import { drawPost, drawSlide, drawMockup, downloadCanvas, canvasThumb, DEFAULT_ACCENT, stripRich } from '../lib/canvas'
-import { addPlanned } from '../lib/store'
+import { upsertSaved, newPostId } from '../lib/savedPosts'
+import { loadShotImage } from '../lib/screenshots'
 import { CopyButton, ScoreCard, Seg, AccentPicker } from '../components/ui'
 import { ScreenshotPicker } from '../components/ScreenshotPicker'
 
 const CATS = (Object.keys(CATEGORY_META) as Category[]).map(c => ({ value: c, label: CATEGORY_META[c].label }))
 const FORMATS = (Object.keys(FORMAT_META) as PostFormat[]).map(f => ({ value: f, label: FORMAT_META[f].label }))
 
-export default function GeneratorPage({ request }: { request: GeneratorRequest | null }) {
+export default function GeneratorPage({ request, edit }: { request: GeneratorRequest | null; edit: EditRequest | null }) {
   const [category, setCategory] = useState<Category>('education')
   const [format, setFormat] = useState<PostFormat>('single')
   const [theme, setTheme] = useState<PostTheme>('dark')
   const [post, setPost] = useState<GeneratedPost>(() => generatePost(randomIdea('education'), 'single', 'dark'))
   const [slideIdx, setSlideIdx] = useState(0)
   const [saved, setSaved] = useState(false)
+  // Beim Bearbeiten eines gespeicherten Posts: id + createdAt merken -> Update statt Neuanlage.
+  const [editId, setEditId] = useState<string | null>(null)
+  const [editCreatedAt, setEditCreatedAt] = useState<number | null>(null)
   const [img, setImg] = useState<HTMLImageElement | null>(null)
   const [pickId, setPickId] = useState<string | null>(null)
   const [visual, setVisual] = useState<'typo' | 'shot' | 'promo'>('typo')
@@ -65,7 +69,7 @@ export default function GeneratorPage({ request }: { request: GeneratorRequest |
     if (!image) setVisual('typo')
   }
 
-  // Anfrage aus Datenbank / Kalender
+  // Anfrage aus Datenbank: frische Idee öffnen -> als neuer Post behandeln.
   useEffect(() => {
     if (!request) return
     const idea = findIdea(request.ideaId)
@@ -76,8 +80,34 @@ export default function GeneratorPage({ request }: { request: GeneratorRequest |
     setPost(generatePost(idea, f, theme))
     setSlideIdx(0)
     setSaved(false)
+    setEditId(null)
+    setEditCreatedAt(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [request?.nonce])
+
+  // Gespeicherten Post aus der Datenbank zum Nachbearbeiten laden (voller Zustand).
+  useEffect(() => {
+    if (!edit || edit.saved.payload.kind !== 'ig') return
+    const p = edit.saved.payload.data
+    setCategory(p.post.category)
+    setFormat(p.format)
+    setTheme(p.theme)
+    setAccent(p.accent)
+    setAspect(p.aspect)
+    setVisual(p.visual)
+    setVAlign(p.vAlign)
+    setPost(p.post)
+    setSlideIdx(0)
+    setEditId(edit.saved.id)
+    setEditCreatedAt(edit.saved.createdAt)
+    setSaved(false)
+    ;(async () => {
+      const im = await loadShotImage(p.shotId)
+      setImg(im)
+      setPickId(p.shotId)
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [edit?.nonce])
 
   useEffect(() => {
     const c = canvasRef.current
@@ -115,22 +145,30 @@ export default function GeneratorPage({ request }: { request: GeneratorRequest |
     }
   }, [post, slideIdx, theme, format, img, visual, vAlign, postH, accent])
 
+  // Neue Generierung = neuer Post: Bindung an einen bearbeiteten DB-Eintrag lösen.
+  const resetEdit = () => {
+    setEditId(null)
+    setEditCreatedAt(null)
+  }
   const newIdea = () => {
     setPost(generatePost(randomIdea(category, post.ideaId), format, theme))
     setSlideIdx(0)
     setSaved(false)
+    resetEdit()
   }
   const newVariant = () => {
     const idea = findIdea(post.ideaId) ?? randomIdea(category)
     setPost(generatePost(idea, format, theme))
     setSlideIdx(0)
     setSaved(false)
+    resetEdit()
   }
   const changeCat = (c: Category) => {
     setCategory(c)
     setPost(generatePost(randomIdea(c), format, theme))
     setSlideIdx(0)
     setSaved(false)
+    resetEdit()
   }
   const changeFormat = (f: PostFormat) => {
     setFormat(f)
@@ -138,6 +176,7 @@ export default function GeneratorPage({ request }: { request: GeneratorRequest |
     setPost(generatePost(idea, f, theme))
     setSlideIdx(0)
     setSaved(false)
+    resetEdit()
   }
 
   const download = () => {
@@ -158,19 +197,21 @@ export default function GeneratorPage({ request }: { request: GeneratorRequest |
     }
   }
 
-  const saveToPlanner = () => {
-    addPlanned({
-      id: post.id,
-      date: new Date().toISOString().slice(0, 10),
-      status: 'draft',
-      format,
+  const saveToDb = async () => {
+    const now = Date.now()
+    const id = editId ?? newPostId()
+    await upsertSaved({
+      id,
+      kind: 'ig',
+      title: stripRich(post.headline) || 'Instagram Post',
       category: post.category,
-      headline: stripRich(post.headline),
-      caption: fullCaption(post),
-      hashtags: post.hashtags,
       thumb: canvasRef.current ? canvasThumb(canvasRef.current) : undefined,
-      createdAt: Date.now(),
+      createdAt: editCreatedAt ?? now,
+      updatedAt: now,
+      payload: { kind: 'ig', data: { post, format, theme, accent, aspect, visual, vAlign, shotId: pickId } },
     })
+    setEditId(id)
+    setEditCreatedAt(editCreatedAt ?? now)
     setSaved(true)
   }
 
@@ -242,7 +283,9 @@ export default function GeneratorPage({ request }: { request: GeneratorRequest |
                 <button className="btn btn-primary btn-sm" onClick={download}>
                   {format === 'carousel' ? 'Alle Slides als PNG' : 'PNG herunterladen'}
                 </button>
-                <button className="btn btn-sm" onClick={saveToPlanner}>{saved ? '✓ Im Planner' : 'In Planner speichern'}</button>
+                <button className="btn btn-sm" onClick={saveToDb}>
+                  {saved ? (editId ? '✓ Aktualisiert' : '✓ Gespeichert') : editId ? 'Änderungen speichern' : 'In Datenbank speichern'}
+                </button>
               </div>
             </div>
             <div className="card">

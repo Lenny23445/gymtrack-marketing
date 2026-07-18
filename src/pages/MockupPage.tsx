@@ -5,9 +5,11 @@ import { drawVideoFrame, recordVideoMockup, downloadBlob } from '../lib/videoMoc
 import { generateHashtags } from '../data/hashtags'
 import { CTAS } from '../data/ideas'
 import { hashtagBlock } from '../lib/generator'
-import { addPlanned } from '../lib/store'
+import { upsertSaved, newPostId } from '../lib/savedPosts'
+import { loadShotImage } from '../lib/screenshots'
 import { CopyButton, Seg, AccentPicker } from '../components/ui'
 import { ScreenshotPicker } from '../components/ScreenshotPicker'
+import type { EditRequest } from '../App'
 
 interface TextIdea { h: string; s: string }
 
@@ -37,10 +39,13 @@ const TYPES: { id: string; label: string; texts: TextIdea[] }[] = [
 type Mode = 'image' | 'video'
 type VidFormat = 'post' | 'reel'
 
-export default function MockupPage() {
+export default function MockupPage({ edit }: { edit: EditRequest | null }) {
   const [mode, setMode] = useState<Mode>('image')
   const [img, setImg] = useState<HTMLImageElement | null>(null)
   const [pickId, setPickId] = useState<string | null>(null)
+  // Beim Nachbearbeiten eines gespeicherten Mockups: id + createdAt merken.
+  const [editId, setEditId] = useState<string | null>(null)
+  const [editCreatedAt, setEditCreatedAt] = useState<number | null>(null)
   const [video, setVideo] = useState<HTMLVideoElement | null>(null)
   const [videoName, setVideoName] = useState('')
   const [vidFormat, setVidFormat] = useState<VidFormat>('reel')
@@ -70,6 +75,27 @@ export default function MockupPage() {
     if (mode !== 'image' || !img || !canvasRef.current) return
     drawMockup(canvasRef.current, { img, headline, sub, theme, accent })
   }, [mode, img, headline, sub, theme, accent])
+
+  // Gespeichertes Mockup aus der Datenbank zum Nachbearbeiten laden (nur Bild).
+  useEffect(() => {
+    if (!edit || edit.saved.payload.kind !== 'mockup') return
+    const d = edit.saved.payload.data
+    setMode('image')
+    setTypeId(d.typeId)
+    setHeadline(d.headline)
+    setSub(d.sub)
+    setTheme(d.theme)
+    setAccent(d.accent)
+    setEditId(edit.saved.id)
+    setEditCreatedAt(edit.saved.createdAt)
+    setSaved(false)
+    ;(async () => {
+      const im = await loadShotImage(d.shotId)
+      setImg(im)
+      setPickId(d.shotId)
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [edit?.nonce])
 
   // Video-Vorschau: laufender rAF-Loop
   useEffect(() => {
@@ -119,6 +145,24 @@ export default function MockupPage() {
     }
   }
 
+  const saveToDb = async () => {
+    const now = Date.now()
+    const id = editId ?? newPostId()
+    await upsertSaved({
+      id,
+      kind: 'mockup',
+      title: stripRich(headline) || 'Mockup',
+      category: 'feature',
+      thumb: canvasRef.current ? canvasThumb(canvasRef.current) : undefined,
+      createdAt: editCreatedAt ?? now,
+      updatedAt: now,
+      payload: { kind: 'mockup', data: { headline, sub, theme, accent, typeId, shotId: pickId } },
+    })
+    setEditId(id)
+    setEditCreatedAt(editCreatedAt ?? now)
+    setSaved(true)
+  }
+
   const cta = CTAS[0]
   const caption = `${stripRich(headline)}\n\n${stripRich(sub)}\n\n${cta}\n\n${hashtagBlock(generateHashtags('feature'))}`
 
@@ -151,25 +195,8 @@ export default function MockupPage() {
             {mode === 'image' && img && (
               <div className="row" style={{ marginTop: 14 }}>
                 <button className="btn btn-primary btn-sm" onClick={() => canvasRef.current && downloadCanvas(canvasRef.current, `mockup-${typeId}`)}>PNG herunterladen</button>
-                <button
-                  className="btn btn-sm"
-                  onClick={() => {
-                    addPlanned({
-                      id: 'mock-' + Date.now().toString(36),
-                      date: new Date().toISOString().slice(0, 10),
-                      status: 'draft',
-                      format: 'mockup',
-                      category: 'feature',
-                      headline: stripRich(headline),
-                      caption,
-                      hashtags: generateHashtags('feature'),
-                      thumb: canvasRef.current ? canvasThumb(canvasRef.current) : undefined,
-                      createdAt: Date.now(),
-                    })
-                    setSaved(true)
-                  }}
-                >
-                  {saved ? '✓ Im Planner' : 'In Planner speichern'}
+                <button className="btn btn-sm" onClick={saveToDb}>
+                  {saved ? (editId ? '✓ Aktualisiert' : '✓ Gespeichert') : editId ? 'Änderungen speichern' : 'In Datenbank speichern'}
                 </button>
               </div>
             )}

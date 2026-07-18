@@ -4,8 +4,9 @@ import type { Category, PostTheme, TikTokConcept, TikTokSlide, VAlign } from '..
 import { findIdea, randomIdea } from '../data/ideas'
 import { generateTikTok, tiktokAsText, TREND_LINKS } from '../data/tiktok'
 import { drawTikTokSlide, drawTikTokShot, downloadCanvas, canvasThumb, DEFAULT_ACCENT, stripRich } from '../lib/canvas'
-import { addPlanned } from '../lib/store'
+import { upsertSaved, newPostId } from '../lib/savedPosts'
 import { loadImage, useShots } from '../lib/screenshots'
+import type { EditRequest } from '../App'
 import { CopyButton, Seg, AccentPicker } from '../components/ui'
 import { ScreenshotPicker } from '../components/ScreenshotPicker'
 
@@ -16,13 +17,16 @@ const ALIGNS: { value: VAlign; label: string }[] = [
   { value: 'bottom', label: 'Unten' },
 ]
 
-export default function TikTokPage() {
+export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
   const [cat, setCat] = useState<Category>('problem')
   const [theme, setTheme] = useState<PostTheme>('dark')
   const [accent, setAccent] = useState(DEFAULT_ACCENT)
   const [concept, setConcept] = useState<TikTokConcept>(() => generateTikTok(randomIdea('problem')))
   const [slideIdx, setSlideIdx] = useState(0)
   const [saved, setSaved] = useState(false)
+  // Beim Nachbearbeiten eines gespeicherten TikTok-Posts: id + createdAt merken.
+  const [editId, setEditId] = useState<string | null>(null)
+  const [editCreatedAt, setEditCreatedAt] = useState<number | null>(null)
   // Screenshot-Bibliothek + geladene Bilder pro ID. Jeder Slide referenziert
   // sein eigenes Bild ueber shotId — so kann jeder Slide ein anderes Bild haben.
   const { shots, add, remove } = useShots()
@@ -67,6 +71,21 @@ export default function TikTokPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [concept, slideIdx, theme, imgCache, accent])
 
+  // Gespeicherten TikTok-Post aus der Datenbank zum Nachbearbeiten laden.
+  useEffect(() => {
+    if (!edit || edit.saved.payload.kind !== 'tiktok') return
+    const d = edit.saved.payload.data
+    setCat(d.concept.category)
+    setTheme(d.theme)
+    setAccent(d.accent)
+    setConcept(d.concept)
+    setSlideIdx(0)
+    setEditId(edit.saved.id)
+    setEditCreatedAt(edit.saved.createdAt)
+    setSaved(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [edit?.nonce])
+
   const setSlides = (next: TikTokSlide[]) => {
     setConcept({ ...concept, slides: next })
     setSlideIdx(i => Math.min(i, Math.max(0, next.length - 1)))
@@ -110,15 +129,22 @@ export default function TikTokPage() {
     }
   }
 
+  // Neues Konzept = neuer Post: Bindung an einen bearbeiteten DB-Eintrag lösen.
+  const resetEdit = () => {
+    setEditId(null)
+    setEditCreatedAt(null)
+  }
   const regen = (c: Category = cat) => {
     setConcept(generateTikTok(randomIdea(c)))
     setSlideIdx(0)
     setSaved(false)
+    resetEdit()
   }
   const variant = () => {
     setConcept(generateTikTok(idea ?? randomIdea(cat)))
     setSlideIdx(0)
     setSaved(false)
+    resetEdit()
   }
 
   const downloadAll = () => {
@@ -131,19 +157,21 @@ export default function TikTokPage() {
     })
   }
 
-  const save = () => {
-    addPlanned({
-      id: 'tt-' + Date.now().toString(36),
-      date: new Date().toISOString().slice(0, 10),
-      status: 'draft',
-      format: 'reel',
+  const save = async () => {
+    const now = Date.now()
+    const id = editId ?? newPostId()
+    await upsertSaved({
+      id,
+      kind: 'tiktok',
+      title,
       category: concept.category,
-      headline: 'TikTok · ' + title,
-      caption: conceptText,
-      hashtags: concept.hashtags,
       thumb: canvasRef.current ? canvasThumb(canvasRef.current) : undefined,
-      createdAt: Date.now(),
+      createdAt: editCreatedAt ?? now,
+      updatedAt: now,
+      payload: { kind: 'tiktok', data: { concept, theme, accent } },
     })
+    setEditId(id)
+    setEditCreatedAt(editCreatedAt ?? now)
     setSaved(true)
   }
 
@@ -190,7 +218,9 @@ export default function TikTokPage() {
               )}
               <div className="row" style={{ marginTop: 14 }}>
                 <button className="btn btn-primary btn-sm" onClick={downloadAll}>Alle Slides als PNG</button>
-                <button className="btn btn-sm" onClick={save}>{saved ? '✓ Im Planner' : 'In Planner speichern'}</button>
+                <button className="btn btn-sm" onClick={save}>
+                  {saved ? (editId ? '✓ Aktualisiert' : '✓ Gespeichert') : editId ? 'Änderungen speichern' : 'In Datenbank speichern'}
+                </button>
               </div>
             </div>
             <div className="card">

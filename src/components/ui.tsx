@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Score } from '../lib/types'
 
 export function CopyButton({ text, label, primary }: { text: string; label: string; primary?: boolean }) {
@@ -37,34 +37,78 @@ export function Seg<T extends string>({
   )
 }
 
+// Schnellzugriff-Presets. Der eigentliche „alle Farben"-Wähler ist der native
+// Color-Picker + das Hex-Feld daneben — jede beliebige Farbe ist wählbar.
 const ACCENTS: { label: string; value: string }[] = [
   { label: 'Blau', value: '#0A84FF' },
+  { label: 'Hellblau', value: '#64D2FF' },
+  { label: 'Türkis', value: '#40C8E0' },
   { label: 'Grün', value: '#30D158' },
-  { label: 'Rot', value: '#FF453A' },
-  { label: 'Orange', value: '#FF9F0A' },
-  { label: 'Violett', value: '#BF5AF2' },
-  { label: 'Pink', value: '#FF375F' },
+  { label: 'Mint', value: '#66D4CF' },
   { label: 'Gelb', value: '#FFD60A' },
+  { label: 'Orange', value: '#FF9F0A' },
+  { label: 'Rot', value: '#FF453A' },
+  { label: 'Pink', value: '#FF375F' },
+  { label: 'Violett', value: '#BF5AF2' },
+  { label: 'Indigo', value: '#5E5CE6' },
+  { label: 'Braun', value: '#AC8E68' },
+  { label: 'Grau', value: '#8E8E93' },
+  { label: 'Weiß', value: '#FFFFFF' },
+  { label: 'Schwarz', value: '#0A0A0A' },
 ]
 
+// Akzeptiert #rgb / #rrggbb (mit/ohne #) und liefert normalisiertes #RRGGBB oder null.
+function normalizeHex(v: string): string | null {
+  let s = v.trim().replace(/^#/, '')
+  if (/^[0-9a-fA-F]{3}$/.test(s)) s = s.split('').map(c => c + c).join('')
+  return /^[0-9a-fA-F]{6}$/.test(s) ? '#' + s.toUpperCase() : null
+}
+
 // Wählt die Highlight-Farbe für Passagen, die im Text mit *Sternchen* markiert sind.
+// Presets für den schnellen Griff + voller Farbraum über den nativen Picker und ein
+// Hex-Feld für exakte Werte (z. B. Markenfarbe).
 export function AccentPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [hex, setHex] = useState(value)
+  // Externe Änderungen (Preset-Klick, Re-Edit eines Posts) ins Hex-Feld spiegeln.
+  useEffect(() => setHex(value), [value])
+
+  const onHexInput = (v: string) => {
+    setHex(v)
+    const n = normalizeHex(v)
+    if (n) onChange(n)
+  }
+
   return (
     <div className="accent-picker">
-      <span className="hint">Highlight:</span>
-      {ACCENTS.map(a => (
-        <button
-          key={a.value}
-          type="button"
-          className={'accent-dot' + (value.toLowerCase() === a.value.toLowerCase() ? ' on' : '')}
-          style={{ background: a.value }}
-          title={a.label}
-          onClick={() => onChange(a.value)}
+      <span className="hint">Highlight-Farbe:</span>
+      <div className="accent-dots">
+        {ACCENTS.map(a => (
+          <button
+            key={a.value}
+            type="button"
+            className={'accent-dot' + (value.toLowerCase() === a.value.toLowerCase() ? ' on' : '')}
+            style={{ background: a.value }}
+            title={a.label}
+            onClick={() => onChange(a.value)}
+          />
+        ))}
+        <label className="accent-custom" title="Alle Farben — eigene wählen">
+          <span className="accent-custom-plus">＋</span>
+          <input type="color" value={normalizeHex(value) ?? '#0A84FF'} onChange={e => onChange(e.target.value.toUpperCase())} />
+        </label>
+      </div>
+      <span className="accent-hex">
+        <span className="accent-hex-swatch" style={{ background: normalizeHex(hex) ?? value }} />
+        <input
+          type="text"
+          className="accent-hex-input"
+          value={hex}
+          onChange={e => onHexInput(e.target.value)}
+          spellCheck={false}
+          maxLength={7}
+          aria-label="Hex-Farbwert"
         />
-      ))}
-      <label className="accent-custom" title="Eigene Farbe">
-        <input type="color" value={value} onChange={e => onChange(e.target.value)} />
-      </label>
+      </span>
       <span className="hint">Passage im Text mit *Sternchen* markieren</span>
     </div>
   )

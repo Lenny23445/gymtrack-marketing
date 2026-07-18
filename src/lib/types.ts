@@ -55,35 +55,6 @@ export interface Score {
   suggestions: string[]
 }
 
-export interface PlannedPost {
-  id: string
-  date: string
-  status: 'draft' | 'planned' | 'published'
-  format: PostFormat | 'reel' | 'mockup'
-  category: Category
-  headline: string
-  caption: string
-  hashtags: string[]
-  thumb?: string
-  createdAt: number
-}
-
-export interface ReelScene {
-  time: string
-  text: string
-  scene: string
-}
-
-export interface ReelConcept {
-  title: string
-  hookLine: string
-  scenes: ReelScene[]
-  audio: string
-  coverText: string
-  caption: string
-  hashtags: string[]
-}
-
 export type VAlign = 'top' | 'center' | 'bottom'
 
 export interface TikTokSlide {
@@ -105,16 +76,6 @@ export interface TikTokConcept {
   sound: { vibe: string; how: string }
   postingTip: string
   plan: string[]
-}
-
-export interface CalendarEntry {
-  date: string
-  weekday: string
-  slotLabel: string
-  format: PostFormat
-  ideaId: string
-  ideaTitle: string
-  category: Category
 }
 
 export const CATEGORY_META: Record<Category, { label: string; kicker: string }> = {

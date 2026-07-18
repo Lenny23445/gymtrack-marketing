@@ -80,6 +80,29 @@ export async function addShot(file: File): Promise<Shot> {
   return shot
 }
 
+export async function getShot(id: string): Promise<Shot | undefined> {
+  const db = await openDb()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readonly')
+    const req = tx.objectStore(STORE).get(id)
+    req.onsuccess = () => resolve(req.result as Shot | undefined)
+    req.onerror = () => reject(req.error)
+  })
+}
+
+// Screenshot per ID direkt als geladenes Bild holen (z. B. zum Re-Rendern eines
+// gespeicherten Posts). Fehlt der Screenshot (gelöscht), kommt null zurück.
+export async function loadShotImage(id: string | null | undefined): Promise<HTMLImageElement | null> {
+  if (!id) return null
+  const shot = await getShot(id)
+  if (!shot) return null
+  try {
+    return await loadImage(shot.dataUrl)
+  } catch {
+    return null
+  }
+}
+
 export async function removeShot(id: string): Promise<void> {
   const db = await openDb()
   await new Promise<void>((resolve, reject) => {

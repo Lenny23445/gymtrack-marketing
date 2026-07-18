@@ -467,9 +467,16 @@ table.plain td {
 .accent-picker {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 10px;
   flex-wrap: wrap;
   margin-bottom: 12px;
+}
+
+.accent-dots {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
 }
 
 .accent-dot {
@@ -491,27 +498,85 @@ table.plain td {
   box-shadow: 0 0 0 2px var(--text);
 }
 
+/* „Alle Farben": Regenbogen-Swatch, öffnet den nativen Farbraum-Picker */
 .accent-custom {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   overflow: hidden;
   box-shadow: 0 0 0 1px var(--border);
   cursor: pointer;
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   position: relative;
+  background: conic-gradient(
+    from 0deg,
+    #ff453a,
+    #ff9f0a,
+    #ffd60a,
+    #30d158,
+    #40c8e0,
+    #0a84ff,
+    #5e5ce6,
+    #bf5af2,
+    #ff375f,
+    #ff453a
+  );
+}
+
+.accent-custom-plus {
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
 }
 
 .accent-custom input[type='color'] {
   position: absolute;
   top: -6px;
   left: -6px;
-  width: 34px;
-  height: 34px;
+  width: 40px;
+  height: 40px;
   border: none;
   padding: 0;
   background: none;
   cursor: pointer;
+  opacity: 0;
+}
+
+.accent-hex {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 3px 8px 3px 5px;
+  background: var(--surface);
+}
+
+.accent-hex-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  box-shadow: 0 0 0 1px var(--border);
+  flex-shrink: 0;
+}
+
+.accent-hex-input {
+  width: 82px;
+  border: none !important;
+  padding: 0 !important;
+  font-size: 13px !important;
+  font-variant-numeric: tabular-nums;
+  text-transform: uppercase;
+  background: transparent !important;
+}
+
+.accent-hex-input:focus {
+  outline: none !important;
 }
 
 @media (max-width: 900px) {
@@ -589,4 +654,44 @@ table.plain td {
 
 .shot-tile:hover .shot-del {
   opacity: 1;
+}
+
+/* ---------- Content-Datenbank: gespeicherte Posts ---------- */
+
+.saved-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+}
+
+.saved-tile {
+  display: flex;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  background: var(--surface);
+}
+
+.saved-thumb {
+  width: 66px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+  align-self: flex-start;
+  object-fit: cover;
+}
+
+.saved-thumb-empty {
+  height: 104px;
+  background: var(--bg);
+}
+
+.saved-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.saved-body .t {
+  overflow-wrap: anywhere;
 }
