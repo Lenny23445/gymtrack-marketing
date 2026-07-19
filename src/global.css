@@ -585,6 +585,78 @@ table.plain td {
   }
 }
 
+/* ---------- Sticker-Ebene (frei platzierbar) ---------- */
+
+.sticker-stage {
+  position: relative;
+  display: block;
+  line-height: 0;
+}
+
+.sticker-stage .preview-canvas {
+  width: 100%;
+}
+
+.stk-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none; /* nur die Sticker selbst sind interaktiv */
+}
+
+.stk {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  touch-action: none;
+  cursor: grab;
+  outline: 1px dashed rgba(10, 132, 255, 0.75);
+  outline-offset: 2px;
+}
+
+.stk:active {
+  cursor: grabbing;
+}
+
+.stk img {
+  width: 100%;
+  height: auto;
+  display: block;
+  pointer-events: none;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+.stk-del {
+  position: absolute;
+  top: -11px;
+  right: -11px;
+  width: 21px;
+  height: 21px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: #0a0a0a;
+  color: #fff;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stk-resize {
+  position: absolute;
+  right: -8px;
+  bottom: -8px;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: #0a84ff;
+  border: 2px solid #fff;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
 /* ---------- Cloud-Sync-Status ---------- */
 
 .sync-dot {

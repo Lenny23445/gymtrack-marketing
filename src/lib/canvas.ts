@@ -1,4 +1,4 @@
-import type { PostTheme, Slide } from './types'
+import type { PostTheme, Slide, Sticker } from './types'
 import { FONT_STACKS, DEFAULT_STYLE } from './fonts'
 import type { TextStyle, EffectKey } from './fonts'
 
@@ -627,6 +627,51 @@ export function drawTikTokShot(
   ctx.textAlign = 'center'
   ctx.fillText('MY GYM TRACK', w / 2, h - PAD)
   ctx.textAlign = 'left'
+}
+
+function loadImg(src: string): Promise<HTMLImageElement> {
+  return new Promise((res, rej) => {
+    const i = new Image()
+    i.onload = () => res(i)
+    i.onerror = () => rej(new Error('sticker load'))
+    i.src = src
+  })
+}
+
+// Frei platzierte Sticker in das (bereits gezeichnete) Canvas einbrennen — für den
+// PNG-Export und DB-Thumbnails. Positionen sind Anteile der Canvas-Maße (0..1).
+export async function drawStickers(canvas: HTMLCanvasElement, stickers?: Sticker[]) {
+  if (!stickers || stickers.length === 0) return
+  const ctx = canvas.getContext('2d')!
+  const W = canvas.width
+  const H = canvas.height
+  for (const s of stickers) {
+    try {
+      const img = await loadImg(s.dataUrl)
+      const w = Math.max(1, s.nscale * W)
+      const h = w * (img.height / Math.max(1, img.width))
+      ctx.drawImage(img, s.nx * W - w / 2, s.ny * H - h / 2, w, h)
+    } catch {
+      /* kaputten Sticker überspringen */
+    }
+  }
+}
+
+// Sticker beim Import verkleinern, aber als PNG (Transparenz bleibt erhalten —
+// JPEG würde durchsichtige Bereiche schwarz füllen).
+export function downscalePng(dataUrl: string, maxDim = 700): Promise<string> {
+  return loadImg(dataUrl)
+    .then(img => {
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height))
+      const w = Math.max(1, Math.round(img.width * scale))
+      const h = Math.max(1, Math.round(img.height * scale))
+      const c = document.createElement('canvas')
+      c.width = w
+      c.height = h
+      c.getContext('2d')!.drawImage(img, 0, 0, w, h)
+      return c.toDataURL('image/png')
+    })
+    .catch(() => dataUrl)
 }
 
 export function downloadCanvas(canvas: HTMLCanvasElement, name: string) {

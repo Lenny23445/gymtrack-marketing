@@ -6,6 +6,7 @@ import {
   drawSlide,
   drawTikTokShot,
   drawTikTokSlide,
+  drawStickers,
   downloadCanvas,
   canvasThumb,
 } from './canvas'
@@ -68,6 +69,7 @@ async function renderTikTok(d: TiktokPayload): Promise<HTMLCanvasElement[]> {
     const img = s.kind === 'shot' ? await loadShotImage(s.shotId) : null
     if (s.kind === 'shot' && img) drawTikTokShot(c, img, s.text, d.theme, d.accent, d.style)
     else drawTikTokSlide(c, s.text, d.theme, s.align ?? 'center', d.accent, d.style)
+    await drawStickers(c, s.stickers)
     out.push(c)
   }
   return out

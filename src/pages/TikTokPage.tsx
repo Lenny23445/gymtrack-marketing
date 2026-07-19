@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { CATEGORY_META } from '../lib/types'
-import type { Category, PostTheme, TikTokConcept, TikTokSlide, VAlign } from '../lib/types'
+import type { Category, PostTheme, Sticker, TikTokConcept, TikTokSlide, VAlign } from '../lib/types'
 import { findIdea, randomIdea } from '../data/ideas'
 import { generateTikTok, tiktokAsText, TREND_LINKS } from '../data/tiktok'
-import { drawTikTokSlide, drawTikTokShot, downloadCanvas, canvasThumb, DEFAULT_ACCENT, stripRich } from '../lib/canvas'
+import { drawTikTokSlide, drawTikTokShot, drawStickers, downscalePng, downloadCanvas, canvasThumb, DEFAULT_ACCENT, stripRich } from '../lib/canvas'
 import { upsertSaved, newPostId } from '../lib/savedPosts'
 import { loadImage, useShots } from '../lib/screenshots'
 import { useFontsReady, DEFAULT_STYLE } from '../lib/fonts'
@@ -11,6 +11,7 @@ import type { TextStyle } from '../lib/fonts'
 import type { EditRequest } from '../App'
 import { CopyButton, Seg, AccentPicker, StylePicker } from '../components/ui'
 import { ScreenshotPicker } from '../components/ScreenshotPicker'
+import { StickerLayer } from '../components/StickerLayer'
 
 const CATS = (Object.keys(CATEGORY_META) as Category[]).map(c => ({ value: c, label: CATEGORY_META[c].label }))
 const ALIGNS: { value: VAlign; label: string }[] = [
@@ -36,6 +37,7 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
   const { shots, add, remove } = useShots()
   const [imgCache, setImgCache] = useState<Record<string, HTMLImageElement>>({})
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const stageRef = useRef<HTMLDivElement>(null)
 
   const idea = findIdea(concept.ideaId)
   const title = idea?.title ?? 'TikTok Slides'
@@ -100,6 +102,24 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
   const updSlide = (i: number, patch: Partial<TikTokSlide>) =>
     setSlides(slides.map((s, n) => (n === i ? { ...s, ...patch } : s)))
 
+  // Sticker importieren (Bild) → mittig auf dem aktiven Slide platzieren, dann frei ziehbar.
+  const importSticker = (file?: File) => {
+    if (!file || !file.type.startsWith('image/')) return
+    const r = new FileReader()
+    r.onload = async () => {
+      const dataUrl = await downscalePng(r.result as string)
+      const st: Sticker = {
+        id: 'stk-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+        dataUrl,
+        nx: 0.5,
+        ny: 0.5,
+        nscale: 0.28,
+      }
+      updSlide(activeIdx, { stickers: [...(slides[activeIdx]?.stickers ?? []), st] })
+    }
+    r.readAsDataURL(file)
+  }
+
   // Bild einem Slide zuweisen (aus Bibliothek-Picker oder Inline-Auswahl).
   // Gleiche ID nochmal = abwaehlen. Bild-Zuweisung macht den Slide zum Shot-Slide.
   const assignShot = (i: number, id: string | null) => {
@@ -154,9 +174,10 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
 
   const downloadAll = () => {
     slides.forEach((s, i) => {
-      setTimeout(() => {
+      setTimeout(async () => {
         const tmp = document.createElement('canvas')
         drawOne(tmp, s)
+        await drawStickers(tmp, s.stickers)
         downloadCanvas(tmp, `tiktok-${concept.ideaId}-slide-${i + 1}`)
       }, i * 350)
     })
@@ -165,12 +186,21 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
   const save = async () => {
     const now = Date.now()
     const id = editId ?? newPostId()
+    // Thumbnail inkl. Sticker rendern (die liegen als Overlay über dem Canvas).
+    let thumb: string | undefined
+    const activeSlide = slides[activeIdx]
+    if (activeSlide) {
+      const tmp = document.createElement('canvas')
+      drawOne(tmp, activeSlide)
+      await drawStickers(tmp, activeSlide.stickers)
+      thumb = canvasThumb(tmp)
+    }
     await upsertSaved({
       id,
       kind: 'tiktok',
       title,
       category: concept.category,
-      thumb: canvasRef.current ? canvasThumb(canvasRef.current) : undefined,
+      thumb,
       createdAt: editCreatedAt ?? now,
       updatedAt: now,
       payload: { kind: 'tiktok', data: { concept, theme, accent, style } },
@@ -209,7 +239,14 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
           <div className="stack">
             <div className="card">
               <h3>Vorschau · 1080 × 1920 · Slide {activeIdx + 1}/{slides.length}</h3>
-              <canvas ref={canvasRef} className="preview-canvas" style={{ maxWidth: 300, margin: '0 auto' }} />
+              <div ref={stageRef} className="sticker-stage" style={{ maxWidth: 300, margin: '0 auto' }}>
+                <canvas ref={canvasRef} className="preview-canvas" />
+                <StickerLayer
+                  stickers={slides[activeIdx]?.stickers ?? []}
+                  stageRef={stageRef}
+                  onChange={st => updSlide(activeIdx, { stickers: st })}
+                />
+              </div>
               {slides.length > 1 && (
                 <div className="slide-nav">
                   <button className="btn btn-sm" onClick={() => setSlideIdx(i => Math.max(0, i - 1))}>←</button>
@@ -223,10 +260,25 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
               )}
               <div className="row" style={{ marginTop: 14 }}>
                 <button className="btn btn-primary btn-sm" onClick={downloadAll}>Alle Slides als PNG</button>
+                <label className="btn btn-sm" style={{ cursor: 'pointer' }}>
+                  + Sticker
+                  <input
+                    type="file"
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                    onChange={e => {
+                      importSticker(e.target.files?.[0])
+                      e.currentTarget.value = ''
+                    }}
+                  />
+                </label>
                 <button className="btn btn-sm" onClick={save}>
                   {saved ? (editId ? '✓ Aktualisiert' : '✓ Gespeichert') : editId ? 'Änderungen speichern' : 'In Datenbank speichern'}
                 </button>
               </div>
+              <p className="hint" style={{ marginTop: 8 }}>
+                Sticker importieren → im Preview frei ziehen · Ecke ziehen = Größe · × löscht. Gilt für den angezeigten Slide {activeIdx + 1}.
+              </p>
             </div>
             <div className="card">
               <h3>Screenshot-Bibliothek</h3>

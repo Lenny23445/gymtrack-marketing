@@ -57,6 +57,16 @@ export interface Score {
 
 export type VAlign = 'top' | 'center' | 'bottom'
 
+// Frei platzierbarer Sticker (importiertes Bild). Position als Anteil der
+// Canvas-Maße (0..1), damit er unabhängig von der Vorschaugröße sitzt.
+export interface Sticker {
+  id: string
+  dataUrl: string
+  nx: number // Mittelpunkt X, Anteil der Breite
+  ny: number // Mittelpunkt Y, Anteil der Höhe
+  nscale: number // Breite als Anteil der Canvas-Breite
+}
+
 export interface TikTokSlide {
   text: string
   note: string
@@ -64,6 +74,8 @@ export interface TikTokSlide {
   align?: VAlign
   // Screenshot-Slides: eigenes Bild pro Slide (ID aus der Screenshot-Bibliothek)
   shotId?: string
+  // Frei platzierte Sticker auf diesem Slide
+  stickers?: Sticker[]
 }
 
 export interface TikTokConcept {
