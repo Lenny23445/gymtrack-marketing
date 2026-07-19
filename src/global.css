@@ -585,6 +585,23 @@ table.plain td {
   }
 }
 
+/* ---------- Cloud-Sync-Status ---------- */
+
+.sync-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-2);
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+
+.sync-dot.on {
+  background: #30d158;
+  opacity: 1;
+  box-shadow: 0 0 0 3px rgba(48, 209, 88, 0.18);
+}
+
 /* ---------- Schrift- & Effekt-Wähler ---------- */
 
 .style-picker {

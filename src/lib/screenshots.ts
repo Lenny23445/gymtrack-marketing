@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
+import { cloudReady, cloudPut, cloudDelete, cloudList, cloudSubscribe } from './cloud'
 
-// Persistente Screenshot-Bibliothek in IndexedDB. Bilder bleiben lokal auf dem
-// Geraet (kein Upload irgendwohin) und sind in allen Generatoren abrufbar.
-// IndexedDB statt localStorage, weil viele Screenshots das ~5-MB-Limit sprengen.
+// Screenshot-Bibliothek: lokal in IndexedDB (Offline + schneller Zugriff über die
+// Bild-ID beim Re-Rendern) UND geteilt über Firebase (siehe cloud.ts). So sehen
+// alle mit dem geteilten Link dieselben Screenshots, und neue Uploads einer Person
+// tauchen bei der anderen auf. Ohne Cloud (offline/Regeln fehlen) läuft alles lokal.
 
 export interface Shot {
   id: string
@@ -44,6 +46,32 @@ function fileToDataUrl(file: File): Promise<string> {
   })
 }
 
+// Bild verkleinern + als JPEG komprimieren, damit es unter das Firestore-1-MB-Doc-
+// Limit passt (wie der GymTrack-Share-Flow). Fällt bei Fehlern auf das Original zurück.
+export async function compressDataUrl(dataUrl: string, maxDim = 1290, maxChars = 900_000): Promise<string> {
+  try {
+    const img = await loadImage(dataUrl)
+    const scale = Math.min(1, maxDim / Math.max(img.width, img.height))
+    const w = Math.max(1, Math.round(img.width * scale))
+    const h = Math.max(1, Math.round(img.height * scale))
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return dataUrl
+    ctx.drawImage(img, 0, 0, w, h)
+    let q = 0.85
+    let out = canvas.toDataURL('image/jpeg', q)
+    while (out.length > maxChars && q > 0.4) {
+      q -= 0.1
+      out = canvas.toDataURL('image/jpeg', q)
+    }
+    return out
+  } catch {
+    return dataUrl
+  }
+}
+
 export async function listShots(): Promise<Shot[]> {
   const db = await openDb()
   return new Promise((resolve, reject) => {
@@ -54,16 +82,31 @@ export async function listShots(): Promise<Shot[]> {
   })
 }
 
+// Mehrere Screenshots in die lokale IndexedDB spiegeln (Cloud → lokaler Cache).
+export async function putManyLocal(shots: Shot[]): Promise<void> {
+  if (shots.length === 0) return
+  const db = await openDb()
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite')
+    const store = tx.objectStore(STORE)
+    for (const s of shots) if (s.id && s.dataUrl) store.put(s)
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
+}
+
 export async function addShot(file: File): Promise<Shot> {
   if (file.type && !file.type.startsWith('image/')) {
     throw new Error(`„${file.name}“ ist kein Bild.`)
   }
-  const dataUrl = await fileToDataUrl(file)
+  const raw = await fileToDataUrl(file)
   try {
-    await loadImage(dataUrl) // HEIC/kaputte Datei -> hier abfangen, nicht speichern
+    await loadImage(raw) // HEIC/kaputte Datei -> hier abfangen, nicht speichern
   } catch {
     throw new Error(`„${file.name}“ konnte nicht gelesen werden (evtl. HEIC — als PNG/JPG exportieren).`)
   }
+  // Komprimieren, damit der Screenshot auch in die geteilte Cloud passt.
+  const dataUrl = await compressDataUrl(raw)
   const shot: Shot = {
     id: 's-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
     name: file.name || 'screenshot',
@@ -113,90 +156,87 @@ export async function removeShot(id: string): Promise<void> {
   })
 }
 
-// ── Seed: mitgelieferte Screenshots ─────────────────────────────────────────
-// Damit ein geteilter Link (z. B. fuer die Marketing-Person) die Screenshots
-// schon FERTIG enthaelt, liefern wir sie als statische Datei `public/seed-shots.json`
-// mit und spielen sie beim ersten Laden einmalig in die lokale IndexedDB ein.
-// Idempotent: pro `version` nur einmal (localStorage-Flag), damit vom Nutzer
-// geloeschte Seeds nicht wieder auftauchen. Neue Version im JSON = neu einspielen.
-
-interface SeedFile {
-  version?: number
-  shots?: Shot[]
-}
-
-const SEED_FLAG = 'gts-seed-version'
-
-// Beim App-Start aufrufen (main.tsx) VOR dem ersten Render. Gibt true zurueck,
-// wenn tatsaechlich etwas neu eingespielt wurde. Faellt still zurueck.
-export async function seedScreenshots(): Promise<boolean> {
-  try {
-    const url = `${import.meta.env.BASE_URL}seed-shots.json`
-    const res = await fetch(url, { cache: 'no-cache' })
-    if (!res.ok) return false
-    const data = (await res.json()) as SeedFile
-    const shots = (data.shots ?? []).filter(s => s && s.id && s.dataUrl)
-    const version = String(data.version ?? 1)
-    if (shots.length === 0) return false
-    if (localStorage.getItem(SEED_FLAG) === version) return false
-
-    const existing = new Set((await listShots()).map(s => s.id))
-    const db = await openDb()
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE, 'readwrite')
-      const store = tx.objectStore(STORE)
-      for (const s of shots) if (!existing.has(s.id)) store.put(s)
-      tx.oncomplete = () => resolve()
-      tx.onerror = () => reject(tx.error)
-    })
-    localStorage.setItem(SEED_FLAG, version)
-    return true
-  } catch {
-    return false
-  }
-}
-
-// Aktuelle Bibliothek als seed-shots.json exportieren — die Datei dann in den
-// Projektordner `public/` legen und pushen, damit alle den Link mit Screenshots
-// bekommen. `version` hochzaehlen, wenn schon einmal geseedet wurde.
-export async function exportSeed(version = Date.now()): Promise<number> {
-  const shots = await listShots()
-  const json = JSON.stringify({ version, shots })
-  const blob = new Blob([json], { type: 'application/json' })
-  const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
-  a.download = 'seed-shots.json'
-  a.click()
-  URL.revokeObjectURL(a.href)
-  return shots.length
-}
-
+// Geteilte Bibliothek: lokal sofort anzeigen, dann mit der Cloud synchronisieren.
+// `synced` = true, sobald das Live-Abo läuft (Screenshots sind dann geteilt).
 export function useShots() {
   const [shots, setShots] = useState<Shot[]>([])
   const [loading, setLoading] = useState(true)
+  const [synced, setSynced] = useState(false)
 
-  const refresh = useCallback(async () => {
-    try {
-      setShots(await listShots())
-    } finally {
+  const sortByNew = (arr: Shot[]) => [...arr].sort((a, b) => b.createdAt - a.createdAt)
+
+  useEffect(() => {
+    let alive = true
+    let unsub: (() => void) | null = null
+    ;(async () => {
+      // 1) Lokale Bibliothek sofort zeigen
+      const local = await listShots()
+      if (!alive) return
+      setShots(sortByNew(local))
       setLoading(false)
+
+      // 2) Cloud verbinden (fail-soft)
+      const ok = await cloudReady()
+      if (!ok || !alive) return
+
+      // 3) Migration: lokale Screenshots, die noch nicht in der Cloud sind, hochladen
+      let cloudShots: Shot[]
+      try {
+        cloudShots = await cloudList()
+      } catch {
+        return // keine Rechte/offline -> lokal bleiben
+      }
+      const cloudIds = new Set(cloudShots.map(s => s.id))
+      for (const s of local) {
+        if (cloudIds.has(s.id)) continue
+        try {
+          await cloudPut({ ...s, dataUrl: await compressDataUrl(s.dataUrl) })
+        } catch {
+          /* einzelnes Bild überspringen */
+        }
+      }
+
+      // 4) Live-Abo: Cloud = geteilte Wahrheit, lokal spiegeln (Offline + by-ID)
+      unsub =
+        cloudSubscribe(
+          async cloud => {
+            await putManyLocal(cloud)
+            if (alive) {
+              setShots(sortByNew(cloud))
+              setSynced(true)
+            }
+          },
+          () => {
+            /* lokaler Modus */
+          },
+        ) ?? null
+    })()
+    return () => {
+      alive = false
+      if (unsub) unsub()
     }
   }, [])
 
-  useEffect(() => {
-    refresh()
-  }, [refresh])
-
   const add = useCallback(async (file: File) => {
     const s = await addShot(file)
-    await refresh()
+    setShots(prev => sortByNew([s, ...prev.filter(x => x.id !== s.id)]))
+    try {
+      if (await cloudReady()) await cloudPut(s)
+    } catch {
+      /* lokal gespeichert, Cloud folgt später */
+    }
     return s
-  }, [refresh])
+  }, [])
 
   const remove = useCallback(async (id: string) => {
     await removeShot(id)
-    await refresh()
-  }, [refresh])
+    setShots(prev => prev.filter(x => x.id !== id))
+    try {
+      await cloudDelete(id)
+    } catch {
+      /* lokal gelöscht */
+    }
+  }, [])
 
-  return { shots, loading, add, remove }
+  return { shots, loading, synced, add, remove }
 }
