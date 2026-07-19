@@ -113,6 +113,64 @@ export async function removeShot(id: string): Promise<void> {
   })
 }
 
+// ── Seed: mitgelieferte Screenshots ─────────────────────────────────────────
+// Damit ein geteilter Link (z. B. fuer die Marketing-Person) die Screenshots
+// schon FERTIG enthaelt, liefern wir sie als statische Datei `public/seed-shots.json`
+// mit und spielen sie beim ersten Laden einmalig in die lokale IndexedDB ein.
+// Idempotent: pro `version` nur einmal (localStorage-Flag), damit vom Nutzer
+// geloeschte Seeds nicht wieder auftauchen. Neue Version im JSON = neu einspielen.
+
+interface SeedFile {
+  version?: number
+  shots?: Shot[]
+}
+
+const SEED_FLAG = 'gts-seed-version'
+
+// Beim App-Start aufrufen (main.tsx) VOR dem ersten Render. Gibt true zurueck,
+// wenn tatsaechlich etwas neu eingespielt wurde. Faellt still zurueck.
+export async function seedScreenshots(): Promise<boolean> {
+  try {
+    const url = `${import.meta.env.BASE_URL}seed-shots.json`
+    const res = await fetch(url, { cache: 'no-cache' })
+    if (!res.ok) return false
+    const data = (await res.json()) as SeedFile
+    const shots = (data.shots ?? []).filter(s => s && s.id && s.dataUrl)
+    const version = String(data.version ?? 1)
+    if (shots.length === 0) return false
+    if (localStorage.getItem(SEED_FLAG) === version) return false
+
+    const existing = new Set((await listShots()).map(s => s.id))
+    const db = await openDb()
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readwrite')
+      const store = tx.objectStore(STORE)
+      for (const s of shots) if (!existing.has(s.id)) store.put(s)
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
+    })
+    localStorage.setItem(SEED_FLAG, version)
+    return true
+  } catch {
+    return false
+  }
+}
+
+// Aktuelle Bibliothek als seed-shots.json exportieren — die Datei dann in den
+// Projektordner `public/` legen und pushen, damit alle den Link mit Screenshots
+// bekommen. `version` hochzaehlen, wenn schon einmal geseedet wurde.
+export async function exportSeed(version = Date.now()): Promise<number> {
+  const shots = await listShots()
+  const json = JSON.stringify({ version, shots })
+  const blob = new Blob([json], { type: 'application/json' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = 'seed-shots.json'
+  a.click()
+  URL.revokeObjectURL(a.href)
+  return shots.length
+}
+
 export function useShots() {
   const [shots, setShots] = useState<Shot[]>([])
   const [loading, setLoading] = useState(true)

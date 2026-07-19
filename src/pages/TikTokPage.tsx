@@ -6,8 +6,10 @@ import { generateTikTok, tiktokAsText, TREND_LINKS } from '../data/tiktok'
 import { drawTikTokSlide, drawTikTokShot, downloadCanvas, canvasThumb, DEFAULT_ACCENT, stripRich } from '../lib/canvas'
 import { upsertSaved, newPostId } from '../lib/savedPosts'
 import { loadImage, useShots } from '../lib/screenshots'
+import { useFontsReady, DEFAULT_STYLE } from '../lib/fonts'
+import type { TextStyle } from '../lib/fonts'
 import type { EditRequest } from '../App'
-import { CopyButton, Seg, AccentPicker } from '../components/ui'
+import { CopyButton, Seg, AccentPicker, StylePicker } from '../components/ui'
 import { ScreenshotPicker } from '../components/ScreenshotPicker'
 
 const CATS = (Object.keys(CATEGORY_META) as Category[]).map(c => ({ value: c, label: CATEGORY_META[c].label }))
@@ -21,6 +23,8 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
   const [cat, setCat] = useState<Category>('problem')
   const [theme, setTheme] = useState<PostTheme>('dark')
   const [accent, setAccent] = useState(DEFAULT_ACCENT)
+  const [style, setStyle] = useState<TextStyle>(DEFAULT_STYLE)
+  const fontsReady = useFontsReady()
   const [concept, setConcept] = useState<TikTokConcept>(() => generateTikTok(randomIdea('problem')))
   const [slideIdx, setSlideIdx] = useState(0)
   const [saved, setSaved] = useState(false)
@@ -60,8 +64,8 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
 
   const drawOne = (c: HTMLCanvasElement, s: TikTokSlide) => {
     const im = s.shotId ? imgCache[s.shotId] : undefined
-    if (s.kind === 'shot' && im) drawTikTokShot(c, im, s.text, theme, accent)
-    else drawTikTokSlide(c, s.text, theme, s.align ?? 'center', accent)
+    if (s.kind === 'shot' && im) drawTikTokShot(c, im, s.text, theme, accent, style)
+    else drawTikTokSlide(c, s.text, theme, s.align ?? 'center', accent, style)
   }
 
   useEffect(() => {
@@ -69,7 +73,7 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
     if (!c || slides.length === 0) return
     drawOne(c, slides[activeIdx])
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [concept, slideIdx, theme, imgCache, accent])
+  }, [concept, slideIdx, theme, imgCache, accent, style, fontsReady])
 
   // Gespeicherten TikTok-Post aus der Datenbank zum Nachbearbeiten laden.
   useEffect(() => {
@@ -78,6 +82,7 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
     setCat(d.concept.category)
     setTheme(d.theme)
     setAccent(d.accent)
+    setStyle(d.style ?? DEFAULT_STYLE)
     setConcept(d.concept)
     setSlideIdx(0)
     setEditId(edit.saved.id)
@@ -168,7 +173,7 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
       thumb: canvasRef.current ? canvasThumb(canvasRef.current) : undefined,
       createdAt: editCreatedAt ?? now,
       updatedAt: now,
-      payload: { kind: 'tiktok', data: { concept, theme, accent } },
+      payload: { kind: 'tiktok', data: { concept, theme, accent, style } },
     })
     setEditId(id)
     setEditCreatedAt(editCreatedAt ?? now)
@@ -249,6 +254,7 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
           <div className="stack">
             <div className="card">
               <h3>Slides bearbeiten · Hook-Typ: {concept.hookType}</h3>
+              <StylePicker style={style} onChange={setStyle} />
               <AccentPicker value={accent} onChange={setAccent} />
               {slides.map((s, i) => (
                 <div key={i} style={{ borderBottom: i < slides.length - 1 ? '1px solid var(--border)' : 'none', padding: '12px 0' }}>

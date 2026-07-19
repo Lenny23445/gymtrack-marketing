@@ -1,9 +1,12 @@
 import type { PostTheme, Slide } from './types'
+import { FONT_STACKS, DEFAULT_STYLE } from './fonts'
+import type { TextStyle, EffectKey } from './fonts'
 
 // Rendering-Engine: zeichnet Posts in Instagram-Aufloesung (1080er) auf Canvas.
 // Design-Sprache: Apple-like — viel Weissraum, klare Typo, schwarz/weiss.
 
-const FONT = '"SF Pro Display", "Helvetica Neue", "Inter", -apple-system, sans-serif'
+// Brand/Kicker/Footer bleiben immer in dieser System-Sans (Marken-Konstante).
+const FONT = FONT_STACKS.sans
 
 interface Palette {
   bg: string
@@ -15,6 +18,92 @@ interface Palette {
 export const PALETTES: Record<PostTheme, Palette> = {
   dark: { bg: '#0A0A0A', fg: '#FFFFFF', muted: 'rgba(255,255,255,0.55)', line: 'rgba(255,255,255,0.16)' },
   light: { bg: '#FAFAFA', fg: '#0A0A0A', muted: 'rgba(10,10,10,0.55)', line: 'rgba(10,10,10,0.14)' },
+}
+
+// ── Aktiver Schrift-/Effekt-Stil ────────────────────────────────────────────
+// Modul-State, den jede oeffentliche draw-Funktion GANZ OBEN aus ihrem style-
+// Parameter setzt. Alle draw-Funktionen laufen synchron durch (kein await
+// dazwischen) — der Stil wird beim Betreten frisch gesetzt und bis zum Ende nicht
+// gestoert, daher auch bei parallelen Aufrufern (Thumbnails) rennfrei.
+let CUR_FAM: string = FONT_STACKS.sans
+let CUR_EFFECT: EffectKey = 'none'
+let CUR_STROKE = '#0A0A0A' // Konturfarbe = Hintergrund (fuer Kontur/Sticker)
+
+export function setDrawStyle(style: TextStyle | undefined, theme: PostTheme) {
+  const s = style ?? DEFAULT_STYLE
+  CUR_FAM = FONT_STACKS[s.font] ?? FONT_STACKS.sans
+  CUR_EFFECT = s.effect ?? 'none'
+  CUR_STROKE = PALETTES[theme].bg
+}
+
+// Font-String fuer den HAUPT-Text (Headline/Body/Hook) — nutzt die gewaehlte Familie.
+export function mainFont(weight: number, size: number): string {
+  return `${weight} ${size}px ${CUR_FAM}`
+}
+
+// Aktuelle Pixel-Groesse aus ctx.font lesen (fuer effektabhaengige Linienbreiten).
+function fontSize(ctx: CanvasRenderingContext2D): number {
+  const m = /(\d+(?:\.\d+)?)px/.exec(ctx.font)
+  return m ? parseFloat(m[1]) : 48
+}
+
+// Zeichnet EIN Text-Stueck mit dem aktiven Effekt an (x,y). ctx.font vorher setzen.
+// Wird von drawRichLine fuer allen Haupt-Text genutzt (Kicker/Footer/Brand nicht).
+function paintText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, color: string) {
+  const eff = CUR_EFFECT
+  if (eff === 'none') {
+    ctx.fillStyle = color
+    ctx.fillText(text, x, y)
+    return
+  }
+  const size = fontSize(ctx)
+  ctx.save()
+  ctx.lineJoin = 'round'
+  ctx.miterLimit = 2
+  if (eff === 'shadow') {
+    ctx.shadowColor = 'rgba(0,0,0,0.40)'
+    ctx.shadowBlur = size * 0.10
+    ctx.shadowOffsetY = Math.max(2, size * 0.06)
+    ctx.fillStyle = color
+    ctx.fillText(text, x, y)
+  } else if (eff === 'glow') {
+    // Neon: farbiger Schein in der Textfarbe, mehrfach fuer Intensitaet
+    ctx.shadowColor = color
+    ctx.shadowBlur = size * 0.5
+    ctx.fillStyle = color
+    ctx.fillText(text, x, y)
+    ctx.fillText(text, x, y)
+    ctx.shadowBlur = 0
+    ctx.fillText(text, x, y)
+  } else if (eff === 'outline') {
+    // Kontur: kontrastierende Umrandung + normale Fuellung (pop auf jedem Grund)
+    ctx.strokeStyle = CUR_STROKE
+    ctx.lineWidth = Math.max(2, size * 0.11)
+    ctx.strokeText(text, x, y)
+    ctx.fillStyle = color
+    ctx.fillText(text, x, y)
+  } else if (eff === 'sticker') {
+    // Sticker/Bubble: dicke Umrandung + weicher Schatten (TikTok-Caption-Look)
+    ctx.shadowColor = 'rgba(0,0,0,0.28)'
+    ctx.shadowBlur = size * 0.10
+    ctx.shadowOffsetY = Math.max(2, size * 0.05)
+    ctx.strokeStyle = CUR_STROKE
+    ctx.lineWidth = Math.max(3, size * 0.22)
+    ctx.strokeText(text, x, y)
+    ctx.shadowColor = 'transparent'
+    ctx.shadowBlur = 0
+    ctx.shadowOffsetY = 0
+    ctx.fillStyle = color
+    ctx.fillText(text, x, y)
+  } else if (eff === 'lift') {
+    // 3D: gestapelte Versatz-Kopien in Dunkel hinter dem Text
+    const depth = Math.max(3, Math.round(size * 0.06))
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'
+    for (let d = depth; d >= 1; d--) ctx.fillText(text, x + d, y + d)
+    ctx.fillStyle = color
+    ctx.fillText(text, x, y)
+  }
+  ctx.restore()
 }
 
 const PAD = 96
@@ -55,11 +144,11 @@ export function fitText(
   weight: number,
 ): { size: number; lines: string[] } {
   for (let size = base; size >= min; size -= 4) {
-    ctx.font = `${weight} ${size}px ${FONT}`
+    ctx.font = mainFont(weight, size)
     const lines = wrap(ctx, text, maxWidth)
     if (lines.length <= maxLines) return { size, lines }
   }
-  ctx.font = `${weight} ${min}px ${FONT}`
+  ctx.font = mainFont(weight, min)
   return { size: min, lines: wrap(ctx, text, maxWidth).slice(0, maxLines) }
 }
 
@@ -152,15 +241,15 @@ export function richFit(
 ): { size: number; lines: RichTok[][] } {
   const toks = tokenizeRich(raw)
   for (let size = base; size >= min; size -= 4) {
-    ctx.font = `${weight} ${size}px ${FONT}`
+    ctx.font = mainFont(weight, size)
     const lines = richWrap(ctx, toks, maxWidth)
     if (lines.length <= maxLines) return { size, lines }
   }
-  ctx.font = `${weight} ${min}px ${FONT}`
+  ctx.font = mainFont(weight, min)
   return { size: min, lines: richWrap(ctx, toks, maxWidth).slice(0, maxLines) }
 }
 
-// Zeichnet eine Zeile mit Highlight-Segmenten. Font vorher setzen.
+// Zeichnet eine Zeile mit Highlight-Segmenten und dem aktiven Effekt. Font vorher setzen.
 // align='left': x = linke Kante · align='center': x = Mittelpunkt.
 export function drawRichLine(
   ctx: CanvasRenderingContext2D,
@@ -177,8 +266,7 @@ export function drawRichLine(
   ctx.textAlign = 'left'
   line.forEach((t, i) => {
     if (i > 0 && t.spaceBefore) cx += spaceW
-    ctx.fillStyle = t.hl ? accent : baseColor
-    ctx.fillText(t.text, cx, y)
+    paintText(ctx, t.text, cx, y, t.hl ? accent : baseColor)
     cx += ctx.measureText(t.text).width
   })
   ctx.textAlign = prevAlign
@@ -225,11 +313,13 @@ export interface PostDrawSpec {
   pageIndicator?: string
   vAlign?: 'top' | 'center' | 'bottom'
   accent?: string
+  style?: TextStyle
 }
 
 export function drawPost(canvas: HTMLCanvasElement, spec: PostDrawSpec) {
   const p = PALETTES[spec.theme]
   const accent = spec.accent ?? DEFAULT_ACCENT
+  setDrawStyle(spec.style, spec.theme)
   const ctx = ctx2d(canvas, spec.w, spec.h)
   const contentW = spec.w - PAD * 2
 
@@ -257,14 +347,14 @@ export function drawPost(canvas: HTMLCanvasElement, spec: PostDrawSpec) {
   else if (spec.vAlign === 'bottom') y = spec.h - PAD - 190 - blockH + head.size * 0.8
   else y = (spec.h - blockH) / 2 + head.size * 0.8
 
-  ctx.font = `700 ${head.size}px ${FONT}`
+  ctx.font = mainFont(700, head.size)
   for (const line of head.lines) {
     drawRichLine(ctx, line, PAD, y, p.fg, accent)
     y += headLH
   }
 
   y += gap - headLH + subLH
-  ctx.font = `400 ${subFit.size}px ${FONT}`
+  ctx.font = mainFont(400, subFit.size)
   for (const line of subFit.lines) {
     drawRichLine(ctx, line, PAD, y, p.muted, accent)
     y += subLH
@@ -273,8 +363,17 @@ export function drawPost(canvas: HTMLCanvasElement, spec: PostDrawSpec) {
   footer(ctx, p, spec.w, spec.h)
 }
 
-export function drawSlide(canvas: HTMLCanvasElement, slide: Slide, theme: PostTheme, kickerText: string, h = 1350, accent = DEFAULT_ACCENT) {
+export function drawSlide(
+  canvas: HTMLCanvasElement,
+  slide: Slide,
+  theme: PostTheme,
+  kickerText: string,
+  h = 1350,
+  accent = DEFAULT_ACCENT,
+  style?: TextStyle,
+) {
   const p = PALETTES[theme]
+  setDrawStyle(style, theme)
   const w = 1080
   const ctx = ctx2d(canvas, w, h)
   const contentW = w - PAD * 2
@@ -285,7 +384,7 @@ export function drawSlide(canvas: HTMLCanvasElement, slide: Slide, theme: PostTh
   kicker(ctx, kickerText, p, PAD, PAD + 30)
 
   if (slide.kind === 'point') {
-    // grosse dezente Slide-Nummer
+    // grosse dezente Slide-Nummer (immer Sans, dekorativ)
     ctx.font = `700 200px ${FONT}`
     ctx.fillStyle = p.line
     ctx.fillText(String(slide.index - 1).padStart(2, '0'), PAD - 8, 420)
@@ -300,7 +399,7 @@ export function drawSlide(canvas: HTMLCanvasElement, slide: Slide, theme: PostTh
   const blockH = head.lines.length * headLH + gap + (bodyFit ? bodyFit.lines.length * bodyLH : 0)
   let y = slide.kind === 'point' ? Math.round(h * 0.415) : (h - blockH) / 2 + head.size * 0.8
 
-  ctx.font = `700 ${head.size}px ${FONT}`
+  ctx.font = mainFont(700, head.size)
   for (const line of head.lines) {
     drawRichLine(ctx, line, PAD, y, p.fg, accent)
     y += headLH
@@ -308,7 +407,7 @@ export function drawSlide(canvas: HTMLCanvasElement, slide: Slide, theme: PostTh
 
   if (bodyFit) {
     y += gap - headLH + bodyLH
-    ctx.font = `400 ${bodyFit.size}px ${FONT}`
+    ctx.font = mainFont(400, bodyFit.size)
     for (const line of bodyFit.lines) {
       drawRichLine(ctx, line, PAD, y, p.muted, accent)
       y += bodyLH
@@ -327,6 +426,7 @@ export interface MockupSpec {
   h?: number
   kickerText?: string
   accent?: string
+  style?: TextStyle
 }
 
 export function roundedPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
@@ -345,6 +445,7 @@ export function drawMockup(canvas: HTMLCanvasElement, spec: MockupSpec) {
   const h = spec.h ?? 1350
   const p = PALETTES[spec.theme]
   const accent = spec.accent ?? DEFAULT_ACCENT
+  setDrawStyle(spec.style, spec.theme)
   const ctx = ctx2d(canvas, w, h)
   const contentW = w - PAD * 2
 
@@ -355,7 +456,7 @@ export function drawMockup(canvas: HTMLCanvasElement, spec: MockupSpec) {
 
   const head = richFit(ctx, spec.headline, contentW, 76, 48, 2, 700)
   let y = PAD + 130
-  ctx.font = `700 ${head.size}px ${FONT}`
+  ctx.font = mainFont(700, head.size)
   for (const line of head.lines) {
     drawRichLine(ctx, line, PAD, y, p.fg, accent)
     y += head.size * 1.12
@@ -363,7 +464,7 @@ export function drawMockup(canvas: HTMLCanvasElement, spec: MockupSpec) {
 
   const subFit = richFit(ctx, spec.sub, contentW, 40, 30, 2, 400)
   y += 16
-  ctx.font = `400 ${subFit.size}px ${FONT}`
+  ctx.font = mainFont(400, subFit.size)
   for (const line of subFit.lines) {
     drawRichLine(ctx, line, PAD, y, p.muted, accent)
     y += subFit.size * 1.4
@@ -415,10 +516,12 @@ export function drawTikTokSlide(
   theme: PostTheme,
   vAlign: 'top' | 'center' | 'bottom' = 'center',
   accent = DEFAULT_ACCENT,
+  style?: TextStyle,
 ) {
   const w = 1080
   const h = 1920
   const p = PALETTES[theme]
+  setDrawStyle(style, theme)
   const ctx = ctx2d(canvas, w, h)
   const contentW = w - PAD * 2
 
@@ -431,7 +534,7 @@ export function drawTikTokSlide(
   const richLines = rawLines.map(l => tokenizeRich(l))
   let size = 132
   for (; size >= 60; size -= 4) {
-    ctx.font = `700 ${size}px ${FONT}`
+    ctx.font = mainFont(700, size)
     const widest = Math.max(0, ...richLines.map(l => richLineWidth(ctx, l)))
     const totalH = rawLines.length * size * 1.16
     if (widest <= contentW && totalH <= h - 460) break
@@ -443,13 +546,13 @@ export function drawTikTokSlide(
   else if (vAlign === 'bottom') y = h - 300 - blockH + size * 0.78
   else y = (h - blockH) / 2 + size * 0.78
 
-  ctx.font = `700 ${size}px ${FONT}`
+  ctx.font = mainFont(700, size)
   for (const line of richLines) {
     if (line.length) drawRichLine(ctx, line, w / 2, y, p.fg, accent, 'center')
     y += lh
   }
 
-  // dezente Brand-Signatur unten mittig (kein Sound, kein Label)
+  // dezente Brand-Signatur unten mittig (immer Sans, kein Effekt)
   ctx.font = `700 34px ${FONT}`
   ctx.fillStyle = p.muted
   ctx.textAlign = 'center'
@@ -459,10 +562,18 @@ export function drawTikTokSlide(
 
 // TikTok Screenshot-Slide: Hook oben, kompletter App-Screenshot im Phone-Frame
 // darunter — zum Praesentieren der App. Clean, keine Meta-Labels.
-export function drawTikTokShot(canvas: HTMLCanvasElement, img: HTMLImageElement, headline: string, theme: PostTheme, accent = DEFAULT_ACCENT) {
+export function drawTikTokShot(
+  canvas: HTMLCanvasElement,
+  img: HTMLImageElement,
+  headline: string,
+  theme: PostTheme,
+  accent = DEFAULT_ACCENT,
+  style?: TextStyle,
+) {
   const w = 1080
   const h = 1920
   const p = PALETTES[theme]
+  setDrawStyle(style, theme)
   const ctx = ctx2d(canvas, w, h)
   const contentW = w - PAD * 2
 
@@ -471,7 +582,7 @@ export function drawTikTokShot(canvas: HTMLCanvasElement, img: HTMLImageElement,
 
   const head = richFit(ctx, headline, contentW, 82, 50, 3, 700)
   let y = PAD + 150
-  ctx.font = `700 ${head.size}px ${FONT}`
+  ctx.font = mainFont(700, head.size)
   for (const line of head.lines) {
     drawRichLine(ctx, line, w / 2, y, p.fg, accent, 'center')
     y += head.size * 1.14

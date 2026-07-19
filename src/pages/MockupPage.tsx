@@ -7,7 +7,9 @@ import { CTAS } from '../data/ideas'
 import { hashtagBlock } from '../lib/generator'
 import { upsertSaved, newPostId } from '../lib/savedPosts'
 import { loadShotImage } from '../lib/screenshots'
-import { CopyButton, Seg, AccentPicker } from '../components/ui'
+import { useFontsReady, DEFAULT_STYLE } from '../lib/fonts'
+import type { TextStyle } from '../lib/fonts'
+import { CopyButton, Seg, AccentPicker, StylePicker } from '../components/ui'
 import { ScreenshotPicker } from '../components/ScreenshotPicker'
 import type { EditRequest } from '../App'
 
@@ -57,6 +59,8 @@ export default function MockupPage({ edit }: { edit: EditRequest | null }) {
   const [sub, setSub] = useState(TYPES[0].texts[0].s)
   const [theme, setTheme] = useState<PostTheme>('dark')
   const [accent, setAccent] = useState(DEFAULT_ACCENT)
+  const [style, setStyle] = useState<TextStyle>(DEFAULT_STYLE)
+  const fontsReady = useFontsReady()
   const [saved, setSaved] = useState(false)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rafRef = useRef(0)
@@ -73,8 +77,8 @@ export default function MockupPage({ edit }: { edit: EditRequest | null }) {
   // Bild-Vorschau
   useEffect(() => {
     if (mode !== 'image' || !img || !canvasRef.current) return
-    drawMockup(canvasRef.current, { img, headline, sub, theme, accent })
-  }, [mode, img, headline, sub, theme, accent])
+    drawMockup(canvasRef.current, { img, headline, sub, theme, accent, style })
+  }, [mode, img, headline, sub, theme, accent, style, fontsReady])
 
   // Gespeichertes Mockup aus der Datenbank zum Nachbearbeiten laden (nur Bild).
   useEffect(() => {
@@ -86,6 +90,7 @@ export default function MockupPage({ edit }: { edit: EditRequest | null }) {
     setSub(d.sub)
     setTheme(d.theme)
     setAccent(d.accent)
+    setStyle(d.style ?? DEFAULT_STYLE)
     setEditId(edit.saved.id)
     setEditCreatedAt(edit.saved.createdAt)
     setSaved(false)
@@ -110,12 +115,12 @@ export default function MockupPage({ edit }: { edit: EditRequest | null }) {
     video.muted = true
     video.play().catch(() => {})
     const loop = () => {
-      if (!rendering) drawVideoFrame(ctx, { video, theme, w, h, headline, sub, accent })
+      if (!rendering) drawVideoFrame(ctx, { video, theme, w, h, headline, sub, accent, style })
       rafRef.current = requestAnimationFrame(loop)
     }
     loop()
     return () => cancelAnimationFrame(rafRef.current)
-  }, [mode, video, vidFormat, theme, headline, sub, rendering, accent])
+  }, [mode, video, vidFormat, theme, headline, sub, rendering, accent, style, fontsReady])
 
   const onVideoFile = (file: File | undefined) => {
     if (!file) return
@@ -136,7 +141,7 @@ export default function MockupPage({ edit }: { edit: EditRequest | null }) {
     try {
       const w = 1080
       const h = vidFormat === 'reel' ? 1920 : 1350
-      const { blob, ext } = await recordVideoMockup({ video, theme, w, h, headline, sub, accent }, setProgress)
+      const { blob, ext } = await recordVideoMockup({ video, theme, w, h, headline, sub, accent, style }, setProgress)
       downloadBlob(blob, `mockup-video-${typeId}.${ext}`)
     } finally {
       setRendering(false)
@@ -156,7 +161,7 @@ export default function MockupPage({ edit }: { edit: EditRequest | null }) {
       thumb: canvasRef.current ? canvasThumb(canvasRef.current) : undefined,
       createdAt: editCreatedAt ?? now,
       updatedAt: now,
-      payload: { kind: 'mockup', data: { headline, sub, theme, accent, typeId, shotId: pickId } },
+      payload: { kind: 'mockup', data: { headline, sub, theme, accent, typeId, shotId: pickId, style } },
     })
     setEditId(id)
     setEditCreatedAt(editCreatedAt ?? now)
@@ -231,6 +236,7 @@ export default function MockupPage({ edit }: { edit: EditRequest | null }) {
               <div className="row" style={{ marginBottom: 14 }}>
                 <Seg options={TYPES.map(t => ({ value: t.id, label: t.label }))} value={typeId} onChange={id => applyType(id, 0)} />
               </div>
+              <StylePicker style={style} onChange={setStyle} />
               <AccentPicker value={accent} onChange={setAccent} />
               <label className="field-label">Headline</label>
               <input type="text" value={headline} onChange={e => setHeadline(e.target.value)} />

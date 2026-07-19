@@ -24,14 +24,16 @@ async function renderIg(d: IgPayload): Promise<HTMLCanvasElement[]> {
   const kicker = CATEGORY_META[d.post.category].kicker
   const out: HTMLCanvasElement[] = []
 
+  const style = d.style
+
   if (d.format === 'carousel' && d.post.slides) {
     const img = await loadShotImage(d.shotId)
     for (const s of d.post.slides) {
       const c = document.createElement('canvas')
       if ((s.withShot || s.kind === 'shot') && img) {
-        drawMockup(c, { img, headline: s.heading, sub: s.body ?? '', theme: d.theme, w: 1080, h, kickerText: kicker, accent: d.accent })
+        drawMockup(c, { img, headline: s.heading, sub: s.body ?? '', theme: d.theme, w: 1080, h, kickerText: kicker, accent: d.accent, style })
       } else {
-        drawSlide(c, s, d.theme, kicker, h, d.accent)
+        drawSlide(c, s, d.theme, kicker, h, d.accent, style)
       }
       out.push(c)
     }
@@ -50,9 +52,10 @@ async function renderIg(d: IgPayload): Promise<HTMLCanvasElement[]> {
       h,
       kickerText: kicker,
       accent: d.accent,
+      style,
     })
   } else {
-    drawPost(c, { kickerText: kicker, headline: d.post.headline, sub: d.post.sub, theme: d.theme, w: 1080, h, vAlign: d.vAlign, accent: d.accent })
+    drawPost(c, { kickerText: kicker, headline: d.post.headline, sub: d.post.sub, theme: d.theme, w: 1080, h, vAlign: d.vAlign, accent: d.accent, style })
   }
   out.push(c)
   return out
@@ -63,8 +66,8 @@ async function renderTikTok(d: TiktokPayload): Promise<HTMLCanvasElement[]> {
   for (const s of d.concept.slides) {
     const c = document.createElement('canvas')
     const img = s.kind === 'shot' ? await loadShotImage(s.shotId) : null
-    if (s.kind === 'shot' && img) drawTikTokShot(c, img, s.text, d.theme, d.accent)
-    else drawTikTokSlide(c, s.text, d.theme, s.align ?? 'center', d.accent)
+    if (s.kind === 'shot' && img) drawTikTokShot(c, img, s.text, d.theme, d.accent, d.style)
+    else drawTikTokSlide(c, s.text, d.theme, s.align ?? 'center', d.accent, d.style)
     out.push(c)
   }
   return out
@@ -74,9 +77,9 @@ async function renderMockup(d: MockupPayload): Promise<HTMLCanvasElement[]> {
   const c = document.createElement('canvas')
   const img = await loadShotImage(d.shotId)
   if (img) {
-    drawMockup(c, { img, headline: d.headline, sub: d.sub, theme: d.theme, accent: d.accent })
+    drawMockup(c, { img, headline: d.headline, sub: d.sub, theme: d.theme, accent: d.accent, style: d.style })
   } else {
-    drawPost(c, { kickerText: 'MY GYM TRACK', headline: d.headline, sub: d.sub, theme: d.theme, w: 1080, h: 1350, accent: d.accent })
+    drawPost(c, { kickerText: 'MY GYM TRACK', headline: d.headline, sub: d.sub, theme: d.theme, w: 1080, h: 1350, accent: d.accent, style: d.style })
   }
   return [c]
 }

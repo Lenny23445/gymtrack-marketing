@@ -8,7 +8,9 @@ import { scorePost } from '../lib/scoring'
 import { drawPost, drawSlide, drawMockup, downloadCanvas, canvasThumb, DEFAULT_ACCENT, stripRich } from '../lib/canvas'
 import { upsertSaved, newPostId } from '../lib/savedPosts'
 import { loadShotImage } from '../lib/screenshots'
-import { CopyButton, ScoreCard, Seg, AccentPicker } from '../components/ui'
+import { useFontsReady, DEFAULT_STYLE } from '../lib/fonts'
+import type { TextStyle } from '../lib/fonts'
+import { CopyButton, ScoreCard, Seg, AccentPicker, StylePicker } from '../components/ui'
 import { ScreenshotPicker } from '../components/ScreenshotPicker'
 
 const CATS = (Object.keys(CATEGORY_META) as Category[]).map(c => ({ value: c, label: CATEGORY_META[c].label }))
@@ -32,6 +34,8 @@ export default function GeneratorPage({ request, edit }: { request: GeneratorReq
   // oben/unten beschnitten) oder 1:1 (wird nirgends beschnitten)
   const [aspect, setAspect] = useState<'45' | '11'>('45')
   const [accent, setAccent] = useState(DEFAULT_ACCENT)
+  const [style, setStyle] = useState<TextStyle>(DEFAULT_STYLE)
+  const fontsReady = useFontsReady()
   const postH = format === 'story' ? 1920 : aspect === '11' ? 1080 : 1350
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
@@ -93,6 +97,7 @@ export default function GeneratorPage({ request, edit }: { request: GeneratorReq
     setFormat(p.format)
     setTheme(p.theme)
     setAccent(p.accent)
+    setStyle(p.style ?? DEFAULT_STYLE)
     setAspect(p.aspect)
     setVisual(p.visual)
     setVAlign(p.vAlign)
@@ -115,9 +120,9 @@ export default function GeneratorPage({ request, edit }: { request: GeneratorReq
     if (format === 'carousel' && post.slides) {
       const s = post.slides[Math.min(slideIdx, post.slides.length - 1)]
       if ((s.withShot || s.kind === 'shot') && img) {
-        drawMockup(c, { img, headline: s.heading, sub: s.body ?? '', theme, w: 1080, h: postH, kickerText: CATEGORY_META[post.category].kicker, accent })
+        drawMockup(c, { img, headline: s.heading, sub: s.body ?? '', theme, w: 1080, h: postH, kickerText: CATEGORY_META[post.category].kicker, accent, style })
       } else {
-        drawSlide(c, s, theme, CATEGORY_META[post.category].kicker, postH, accent)
+        drawSlide(c, s, theme, CATEGORY_META[post.category].kicker, postH, accent, style)
       }
     } else if (img && visual !== 'typo') {
       // 'shot': Idee-Text + Screenshot im Geraet · 'promo': CTA gross + Screenshot
@@ -130,6 +135,7 @@ export default function GeneratorPage({ request, edit }: { request: GeneratorReq
         h: postH,
         kickerText: CATEGORY_META[post.category].kicker,
         accent,
+        style,
       })
     } else {
       drawPost(c, {
@@ -141,9 +147,10 @@ export default function GeneratorPage({ request, edit }: { request: GeneratorReq
         h: postH,
         vAlign,
         accent,
+        style,
       })
     }
-  }, [post, slideIdx, theme, format, img, visual, vAlign, postH, accent])
+  }, [post, slideIdx, theme, format, img, visual, vAlign, postH, accent, style, fontsReady])
 
   // Neue Generierung = neuer Post: Bindung an einen bearbeiteten DB-Eintrag lösen.
   const resetEdit = () => {
@@ -185,9 +192,9 @@ export default function GeneratorPage({ request, edit }: { request: GeneratorReq
         setTimeout(() => {
           const tmp = document.createElement('canvas')
           if ((s.withShot || s.kind === 'shot') && img) {
-            drawMockup(tmp, { img, headline: s.heading, sub: s.body ?? '', theme, w: 1080, h: postH, kickerText: CATEGORY_META[post.category].kicker, accent })
+            drawMockup(tmp, { img, headline: s.heading, sub: s.body ?? '', theme, w: 1080, h: postH, kickerText: CATEGORY_META[post.category].kicker, accent, style })
           } else {
-            drawSlide(tmp, s, theme, CATEGORY_META[post.category].kicker, postH, accent)
+            drawSlide(tmp, s, theme, CATEGORY_META[post.category].kicker, postH, accent, style)
           }
           downloadCanvas(tmp, `${post.ideaId}-slide-${i + 1}`)
         }, i * 350)
@@ -208,7 +215,7 @@ export default function GeneratorPage({ request, edit }: { request: GeneratorReq
       thumb: canvasRef.current ? canvasThumb(canvasRef.current) : undefined,
       createdAt: editCreatedAt ?? now,
       updatedAt: now,
-      payload: { kind: 'ig', data: { post, format, theme, accent, aspect, visual, vAlign, shotId: pickId } },
+      payload: { kind: 'ig', data: { post, format, theme, accent, aspect, visual, vAlign, shotId: pickId, style } },
     })
     setEditId(id)
     setEditCreatedAt(editCreatedAt ?? now)
@@ -297,6 +304,7 @@ export default function GeneratorPage({ request, edit }: { request: GeneratorReq
           <div className="stack">
             <div className="card">
               <h3>{format === 'carousel' ? `Slides bearbeiten (${post.slides?.length ?? 0})` : 'Texte bearbeiten'}</h3>
+              <StylePicker style={style} onChange={setStyle} />
               <AccentPicker value={accent} onChange={setAccent} />
               {format === 'carousel' && post.slides ? (
                 <>

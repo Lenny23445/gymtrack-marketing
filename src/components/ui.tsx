@@ -1,5 +1,43 @@
 import { useEffect, useState } from 'react'
 import type { Score } from '../lib/types'
+import { FONTS, EFFECTS } from '../lib/fonts'
+import type { TextStyle } from '../lib/fonts'
+
+// Schrift- + Effekt-Wähler. Jeder Schrift-Chip zeigt seine eigene Schriftart als
+// Live-Vorschau. Effekte: Kontur, Schatten, Neon, Sticker/Bubble, 3D.
+export function StylePicker({ style, onChange }: { style: TextStyle; onChange: (s: TextStyle) => void }) {
+  return (
+    <div className="style-picker">
+      <div className="style-row">
+        <span className="hint">Schrift:</span>
+        {FONTS.map(f => (
+          <button
+            key={f.key}
+            type="button"
+            className={'font-chip' + (style.font === f.key ? ' on' : '')}
+            style={{ fontFamily: f.stack }}
+            onClick={() => onChange({ ...style, font: f.key })}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+      <div className="style-row">
+        <span className="hint">Effekt:</span>
+        {EFFECTS.map(e => (
+          <button
+            key={e.key}
+            type="button"
+            className={'font-chip' + (style.effect === e.key ? ' on' : '')}
+            onClick={() => onChange({ ...style, effect: e.key })}
+          >
+            {e.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 export function CopyButton({ text, label, primary }: { text: string; label: string; primary?: boolean }) {
   const [copied, setCopied] = useState(false)

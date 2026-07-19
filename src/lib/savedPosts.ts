@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { Category, GeneratedPost, PostFormat, PostTheme, TikTokConcept, VAlign } from './types'
+import type { TextStyle } from './fonts'
 
 // Content-Datenbank: gespeicherte, RE-EDITIERBARE Posts.
 // Anders als der alte Planner (nur Caption + Thumb) legen wir hier den kompletten
@@ -20,6 +21,7 @@ export interface IgPayload {
   visual: 'typo' | 'shot' | 'promo'
   vAlign: VAlign
   shotId: string | null
+  style?: TextStyle
 }
 
 // Voller Zustand des TikTok-Slide-Generators (Slides tragen ihre shotId selbst)
@@ -27,6 +29,7 @@ export interface TiktokPayload {
   concept: TikTokConcept
   theme: PostTheme
   accent: string
+  style?: TextStyle
 }
 
 // Voller Zustand des Bild-Mockup-Studios
@@ -37,6 +40,7 @@ export interface MockupPayload {
   accent: string
   typeId: string
   shotId: string | null
+  style?: TextStyle
 }
 
 export type SavedPayload =

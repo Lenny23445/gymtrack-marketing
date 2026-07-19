@@ -585,6 +585,50 @@ table.plain td {
   }
 }
 
+/* ---------- Schrift- & Effekt-Wähler ---------- */
+
+.style-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.style-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.style-row .hint {
+  width: 52px;
+  flex-shrink: 0;
+}
+
+.font-chip {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 980px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  line-height: 1.2;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.font-chip:hover {
+  border-color: var(--text-2);
+}
+
+.font-chip.on {
+  background: var(--black);
+  border-color: var(--black);
+  color: #fff;
+}
+
 /* ---------- Screenshot-Bibliothek ---------- */
 
 .shot-grid {

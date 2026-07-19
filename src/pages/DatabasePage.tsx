@@ -5,6 +5,7 @@ import type { Category, PostFormat } from '../lib/types'
 import { useSaved, KIND_META } from '../lib/savedPosts'
 import type { SavedPost } from '../lib/savedPosts'
 import { downloadSaved } from '../lib/render'
+import { useShots, exportSeed } from '../lib/screenshots'
 
 type Filter = 'all' | Category
 
@@ -18,6 +19,13 @@ export default function DatabasePage({
   const [q, setQ] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
   const { saved, remove } = useSaved()
+  const { shots } = useShots()
+  const [seedMsg, setSeedMsg] = useState<string | null>(null)
+
+  const doExportSeed = async () => {
+    const n = await exportSeed()
+    setSeedMsg(`${n} Screenshot${n === 1 ? '' : 's'} als seed-shots.json exportiert.`)
+  }
 
   const list = useMemo(() => {
     const needle = q.trim().toLowerCase()
@@ -39,6 +47,22 @@ export default function DatabasePage({
       </div>
 
       <div className="stack">
+        {/* ── Screenshots in den geteilten Link buendeln ─────────── */}
+        <div className="card">
+          <h3>Screenshots für den geteilten Link ({shots.length})</h3>
+          <p className="hint" style={{ marginBottom: 12 }}>
+            Screenshots liegen lokal in diesem Browser. Damit jemand mit dem geteilten Link
+            (z. B. deine Freundin) sie schon fertig sieht, hier als <code>seed-shots.json</code> exportieren
+            und die Datei in den Projektordner <code>public/</code> legen und pushen.
+          </p>
+          <div className="row">
+            <button className="btn btn-primary btn-sm" onClick={doExportSeed} disabled={shots.length === 0}>
+              Screenshots als Seed exportieren
+            </button>
+            {seedMsg && <span className="hint">{seedMsg}</span>}
+          </div>
+        </div>
+
         {/* ── Gespeicherte Posts ────────────────────────────────── */}
         <div className="card">
           <h3>Meine Posts ({saved.length})</h3>
