@@ -19,7 +19,7 @@ export const DEFAULT_STYLE: TextStyle = { font: 'sans', effect: 'none' }
 export const FONT_STACKS: Record<FontKey, string> = {
   sans: '-apple-system, "SF Pro Display", "Helvetica Neue", "Inter", sans-serif',
   script: '"Caveat", "Segoe Script", cursive',
-  retro: '"Pacifico", "Brush Script MT", cursive',
+  retro: '"Righteous", "Bungee", "Arial Black", sans-serif',
   serif: '"Playfair Display", Georgia, "Times New Roman", serif',
   impact: '"Anton", Impact, "Haettenschweiler", sans-serif',
   rounded: '"Fredoka", "SF Pro Rounded", "Segoe UI", sans-serif',
@@ -48,7 +48,7 @@ export const EFFECTS: { key: EffectKey; label: string }[] = [
 const LOAD_SPECS = [
   '700 100px "Caveat"',
   '400 100px "Caveat"',
-  '400 100px "Pacifico"',
+  '400 100px "Righteous"',
   '700 100px "Playfair Display"',
   '900 100px "Playfair Display"',
   '400 100px "Anton"',

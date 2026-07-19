@@ -83,6 +83,59 @@ function StickerItem({
   )
 }
 
+// Verschiebe-Griff für den Text (Text bleibt auf dem Canvas; dieser transparente
+// Kasten liegt darüber und aktualisiert die Textposition tx/ty beim Ziehen).
+export function TextHandle({
+  rect,
+  stageRef,
+  onMove,
+}: {
+  rect: { nx: number; ny: number; nw: number; nh: number }
+  stageRef: React.RefObject<HTMLDivElement>
+  onMove: (tx: number, ty: number) => void
+}) {
+  const drag = useRef(false)
+  const start = useRef({ px: 0, py: 0, nx: 0, ny: 0 })
+  const begin = (e: React.PointerEvent) => {
+    e.preventDefault()
+    ;(e.target as Element).setPointerCapture(e.pointerId)
+    drag.current = true
+    start.current = { px: e.clientX, py: e.clientY, nx: rect.nx, ny: rect.ny }
+  }
+  const move = (e: React.PointerEvent) => {
+    if (!drag.current || !stageRef.current) return
+    const r = stageRef.current.getBoundingClientRect()
+    onMove(
+      clamp(start.current.nx + (e.clientX - start.current.px) / r.width, 0, 1),
+      clamp(start.current.ny + (e.clientY - start.current.py) / r.height, 0, 1),
+    )
+  }
+  const end = (e: React.PointerEvent) => {
+    drag.current = false
+    try {
+      ;(e.target as Element).releasePointerCapture(e.pointerId)
+    } catch {
+      /* noop */
+    }
+  }
+  return (
+    <div
+      className="txt-handle"
+      style={{
+        left: `${rect.nx * 100}%`,
+        top: `${rect.ny * 100}%`,
+        width: `${Math.max(rect.nw, 0.2) * 100}%`,
+        height: `${Math.max(rect.nh, 0.06) * 100}%`,
+      }}
+      onPointerDown={begin}
+      onPointerMove={move}
+      onPointerUp={end}
+    >
+      <span className="txt-handle-tag">Text</span>
+    </div>
+  )
+}
+
 export function StickerLayer({
   stickers,
   stageRef,

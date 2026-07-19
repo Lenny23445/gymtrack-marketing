@@ -67,6 +67,13 @@ export interface Sticker {
   nscale: number // Breite als Anteil der Canvas-Breite
 }
 
+// Hintergrund eines Slides: Theme-Standard, Vollton, Farbverlauf oder eigenes Bild.
+export type SlideBg =
+  | { type: 'theme' }
+  | { type: 'solid'; color: string }
+  | { type: 'gradient'; from: string; to: string; angle: number }
+  | { type: 'image'; dataUrl: string }
+
 export interface TikTokSlide {
   text: string
   note: string
@@ -76,6 +83,11 @@ export interface TikTokSlide {
   shotId?: string
   // Frei platzierte Sticker auf diesem Slide
   stickers?: Sticker[]
+  // Hintergrund (sonst Theme dark/light)
+  bg?: SlideBg
+  // Text-Mittelpunkt frei verschoben (Anteil 0..1); sonst zentriert per align
+  tx?: number
+  ty?: number
 }
 
 export interface TikTokConcept {

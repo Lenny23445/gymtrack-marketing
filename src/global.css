@@ -585,6 +585,127 @@ table.plain td {
   }
 }
 
+/* ---------- Design-Panel (aufklappbar) ---------- */
+
+.design-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.dp-row {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.dp-row.open {
+  border-color: var(--text-2);
+}
+
+.dp-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--font);
+}
+
+.dp-label {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.dp-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.dp-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.dp-chev {
+  font-size: 15px;
+  color: var(--text-2);
+  width: 12px;
+  text-align: center;
+}
+
+.dp-body {
+  padding: 0 16px 16px;
+}
+
+.dp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dp-grads {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.dp-grad {
+  height: 42px;
+  border-radius: 9px;
+  border: 2px solid var(--border);
+  cursor: pointer;
+  padding: 0;
+}
+
+.dp-grad.on {
+  border-color: var(--text);
+}
+
+/* ---------- Text-Verschiebe-Griff ---------- */
+
+.txt-handle {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  touch-action: none;
+  cursor: grab;
+  border: 1.5px dashed rgba(10, 132, 255, 0.9);
+  border-radius: 8px;
+  background: rgba(10, 132, 255, 0.06);
+}
+
+.txt-handle:active {
+  cursor: grabbing;
+}
+
+.txt-handle-tag {
+  position: absolute;
+  top: -9px;
+  left: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: #0a84ff;
+  padding: 1px 6px;
+  border-radius: 6px;
+  line-height: 1.4;
+}
+
 /* ---------- Sticker-Ebene (frei platzierbar) ---------- */
 
 .sticker-stage {

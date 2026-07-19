@@ -1,4 +1,4 @@
-import type { PostTheme, Slide, Sticker } from './types'
+import type { PostTheme, Slide, Sticker, SlideBg, VAlign } from './types'
 import { FONT_STACKS, DEFAULT_STYLE } from './fonts'
 import type { TextStyle, EffectKey } from './fonts'
 
@@ -507,17 +507,65 @@ export function drawMockup(canvas: HTMLCanvasElement, spec: MockupSpec) {
   footer(ctx, p, w, h)
 }
 
-// TikTok Photo-Slide: 9:16, riesiger zentrierter Text, respektiert manuelle \n-Umbrueche.
-// Bewusst clean: keine Meta-Labels im Bild (kein "TIKTOK", keine Kartennummer, kein
-// Sound) — nur Hook + dezente Brand-Signatur, damit das PNG direkt postbar ist.
+// Hintergrund eines Slides zeichnen: Theme, Vollton, Farbverlauf oder eigenes Bild.
+// bgImg = vorab geladenes Bild (für type 'image'), da das Zeichnen synchron ist.
+export function paintBg(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  theme: PostTheme,
+  bg?: SlideBg,
+  bgImg?: HTMLImageElement | null,
+) {
+  const p = PALETTES[theme]
+  if (!bg || bg.type === 'theme') {
+    ctx.fillStyle = p.bg
+    ctx.fillRect(0, 0, w, h)
+  } else if (bg.type === 'solid') {
+    ctx.fillStyle = bg.color
+    ctx.fillRect(0, 0, w, h)
+  } else if (bg.type === 'gradient') {
+    const a = ((bg.angle ?? 135) * Math.PI) / 180
+    const r = Math.hypot(w, h) / 2
+    const cx = w / 2
+    const cy = h / 2
+    const g = ctx.createLinearGradient(cx - Math.cos(a) * r, cy - Math.sin(a) * r, cx + Math.cos(a) * r, cy + Math.sin(a) * r)
+    g.addColorStop(0, bg.from)
+    g.addColorStop(1, bg.to)
+    ctx.fillStyle = g
+    ctx.fillRect(0, 0, w, h)
+  } else {
+    ctx.fillStyle = p.bg
+    ctx.fillRect(0, 0, w, h)
+    if (bgImg) {
+      const scale = Math.max(w / bgImg.width, h / bgImg.height)
+      const iw = bgImg.width * scale
+      const ih = bgImg.height * scale
+      ctx.drawImage(bgImg, (w - iw) / 2, (h - ih) / 2, iw, ih)
+    }
+  }
+}
+
+export interface TextRect {
+  nx: number
+  ny: number
+  nw: number
+  nh: number
+}
+
+// TikTok Photo-Slide: 9:16, riesiger Text (frei positionierbar), respektiert manuelle
+// \n-Umbrueche. Liefert das Text-Rechteck (normalisiert) für den Verschiebe-Griff zurück.
 export function drawTikTokSlide(
   canvas: HTMLCanvasElement,
   text: string,
   theme: PostTheme,
-  vAlign: 'top' | 'center' | 'bottom' = 'center',
+  vAlign: VAlign = 'center',
   accent = DEFAULT_ACCENT,
   style?: TextStyle,
-) {
+  bg?: SlideBg,
+  pos?: { tx?: number; ty?: number },
+  bgImg?: HTMLImageElement | null,
+): TextRect {
   const w = 1080
   const h = 1920
   const p = PALETTES[theme]
@@ -525,8 +573,7 @@ export function drawTikTokSlide(
   const ctx = ctx2d(canvas, w, h)
   const contentW = w - PAD * 2
 
-  ctx.fillStyle = p.bg
-  ctx.fillRect(0, 0, w, h)
+  paintBg(ctx, w, h, theme, bg, bgImg)
 
   // manuelle Zeilen (mit Highlight-Segmenten); groesste Schrift finden, bei der
   // die breiteste Zeile passt. Markup faerbt Passagen, misst aber ohne Sternchen.
@@ -539,16 +586,23 @@ export function drawTikTokSlide(
     const totalH = rawLines.length * size * 1.16
     if (widest <= contentW && totalH <= h - 460) break
   }
+  ctx.font = mainFont(700, size)
+  const widest = Math.max(0, ...richLines.map(l => richLineWidth(ctx, l)))
   const lh = size * 1.16
   const blockH = rawLines.length * lh
+  const cx = pos?.tx != null ? pos.tx * w : w / 2
+
+  // Baseline der ersten Zeile
   let y: number
-  if (vAlign === 'top') y = 300 + size * 0.78
+  if (pos?.ty != null) y = pos.ty * h - blockH / 2 + size * 0.78
+  else if (vAlign === 'top') y = 300 + size * 0.78
   else if (vAlign === 'bottom') y = h - 300 - blockH + size * 0.78
   else y = (h - blockH) / 2 + size * 0.78
 
+  const blockTop = y - size * 0.78
   ctx.font = mainFont(700, size)
   for (const line of richLines) {
-    if (line.length) drawRichLine(ctx, line, w / 2, y, p.fg, accent, 'center')
+    if (line.length) drawRichLine(ctx, line, cx, y, p.fg, accent, 'center')
     y += lh
   }
 
@@ -558,6 +612,13 @@ export function drawTikTokSlide(
   ctx.textAlign = 'center'
   ctx.fillText('MY GYM TRACK', w / 2, h - PAD)
   ctx.textAlign = 'left'
+
+  return {
+    nx: cx / w,
+    ny: (blockTop + blockH / 2) / h,
+    nw: Math.min(1, (widest + 40) / w),
+    nh: (blockH + 20) / h,
+  }
 }
 
 // TikTok Screenshot-Slide: Hook oben, kompletter App-Screenshot im Phone-Frame
@@ -569,6 +630,8 @@ export function drawTikTokShot(
   theme: PostTheme,
   accent = DEFAULT_ACCENT,
   style?: TextStyle,
+  bg?: SlideBg,
+  bgImg?: HTMLImageElement | null,
 ) {
   const w = 1080
   const h = 1920
@@ -577,8 +640,7 @@ export function drawTikTokShot(
   const ctx = ctx2d(canvas, w, h)
   const contentW = w - PAD * 2
 
-  ctx.fillStyle = p.bg
-  ctx.fillRect(0, 0, w, h)
+  paintBg(ctx, w, h, theme, bg, bgImg)
 
   const head = richFit(ctx, headline, contentW, 82, 50, 3, 700)
   let y = PAD + 150

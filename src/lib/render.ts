@@ -10,7 +10,7 @@ import {
   downloadCanvas,
   canvasThumb,
 } from './canvas'
-import { loadShotImage } from './screenshots'
+import { loadShotImage, loadImage } from './screenshots'
 
 // Rendert einen gespeicherten Post aus seinem Payload komplett neu — spiegelt die
 // Zeichenlogik der jeweiligen Generator-Seite, damit PNG-Download und Thumbnail
@@ -67,8 +67,16 @@ async function renderTikTok(d: TiktokPayload): Promise<HTMLCanvasElement[]> {
   for (const s of d.concept.slides) {
     const c = document.createElement('canvas')
     const img = s.kind === 'shot' ? await loadShotImage(s.shotId) : null
-    if (s.kind === 'shot' && img) drawTikTokShot(c, img, s.text, d.theme, d.accent, d.style)
-    else drawTikTokSlide(c, s.text, d.theme, s.align ?? 'center', d.accent, d.style)
+    let bgImg: HTMLImageElement | null = null
+    if (s.bg?.type === 'image') {
+      try {
+        bgImg = await loadImage(s.bg.dataUrl)
+      } catch {
+        bgImg = null
+      }
+    }
+    if (s.kind === 'shot' && img) drawTikTokShot(c, img, s.text, d.theme, d.accent, d.style, s.bg, bgImg)
+    else drawTikTokSlide(c, s.text, d.theme, s.align ?? 'center', d.accent, d.style, s.bg, { tx: s.tx, ty: s.ty }, bgImg)
     await drawStickers(c, s.stickers)
     out.push(c)
   }
