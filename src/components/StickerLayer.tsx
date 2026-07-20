@@ -89,11 +89,15 @@ export function TextHandle({
   rect,
   stageRef,
   onMove,
+  onGuides,
 }: {
   rect: { nx: number; ny: number; nw: number; nh: number }
   stageRef: React.RefObject<HTMLDivElement>
   onMove: (tx: number, ty: number) => void
+  // Hilfslinien-Status waehrend des Ziehens (mittig einrasten wie in einer Insta-Story).
+  onGuides?: (g: { v: boolean; h: boolean } | null) => void
 }) {
+  const SNAP = 0.025 // Faengt bei ~2,5 % Abstand zur Mitte auf 0,5 ein
   const drag = useRef(false)
   const start = useRef({ px: 0, py: 0, nx: 0, ny: 0 })
   const begin = (e: React.PointerEvent) => {
@@ -105,13 +109,18 @@ export function TextHandle({
   const move = (e: React.PointerEvent) => {
     if (!drag.current || !stageRef.current) return
     const r = stageRef.current.getBoundingClientRect()
-    onMove(
-      clamp(start.current.nx + (e.clientX - start.current.px) / r.width, 0, 1),
-      clamp(start.current.ny + (e.clientY - start.current.py) / r.height, 0, 1),
-    )
+    let nx = clamp(start.current.nx + (e.clientX - start.current.px) / r.width, 0, 1)
+    let ny = clamp(start.current.ny + (e.clientY - start.current.py) / r.height, 0, 1)
+    const v = Math.abs(nx - 0.5) < SNAP
+    const h = Math.abs(ny - 0.5) < SNAP
+    if (v) nx = 0.5
+    if (h) ny = 0.5
+    onGuides?.({ v, h })
+    onMove(nx, ny)
   }
   const end = (e: React.PointerEvent) => {
     drag.current = false
+    onGuides?.(null)
     try {
       ;(e.target as Element).releasePointerCapture(e.pointerId)
     } catch {

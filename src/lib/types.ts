@@ -71,7 +71,8 @@ export interface Sticker {
 export type SlideBg =
   | { type: 'theme' }
   | { type: 'solid'; color: string }
-  | { type: 'gradient'; from: string; to: string; angle: number }
+  // mid = Position des 50/50-Uebergangs (0..1, Default 0.5) → verschiebt die Mischung
+  | { type: 'gradient'; from: string; to: string; angle: number; mid?: number }
   | { type: 'image'; dataUrl: string }
 
 export interface TikTokSlide {

@@ -27,15 +27,18 @@ const icon = (d: string) => (
   </svg>
 )
 
+// TikTok Slides zuerst — das ist das Kern-Werkzeug und die Start-Ansicht.
 const NAV: { id: Page; label: string; icon: JSX.Element }[] = [
-  { id: 'generator', label: 'Instagram Post', icon: icon('M12 3v18M3 12h18') },
   { id: 'tiktok', label: 'TikTok Slides', icon: icon('M4 4h6v10a4 4 0 1 1-4-4M14 3v5a5 5 0 0 0 5 5') },
+  { id: 'generator', label: 'Instagram Post', icon: icon('M12 3v18M3 12h18') },
   { id: 'mockup', label: 'Mockup-Studio', icon: icon('M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM11 19h2') },
   { id: 'database', label: 'Content-Datenbank', icon: icon('M4 6h16M4 12h16M4 18h16') },
 ]
 
 export default function App() {
-  const [page, setPage] = useState<Page>('generator')
+  const [page, setPage] = useState<Page>('tiktok')
+  // Seitenleiste einklappbar → mehr Platz zum Bearbeiten (schmale Icon-Leiste).
+  const [collapsed, setCollapsed] = useState(false)
   const [request, setRequest] = useState<GeneratorRequest | null>(null)
   const [edit, setEdit] = useState<EditRequest | null>(null)
 
@@ -55,21 +58,36 @@ export default function App() {
 
   return (
     <div className="app">
-      <aside className="sidebar">
+      <aside className={'sidebar' + (collapsed ? ' collapsed' : '')}>
         <div className="brand">
           <div className="brand-mark">GT</div>
-          <div>
-            <div className="brand-name">My Gym Track</div>
-            <div className="brand-sub">Content Studio</div>
-          </div>
+          {!collapsed && (
+            <div>
+              <div className="brand-name">My Gym Track</div>
+              <div className="brand-sub">Content Studio</div>
+            </div>
+          )}
+          <button
+            className="sidebar-toggle"
+            onClick={() => setCollapsed(c => !c)}
+            title={collapsed ? 'Menü ausklappen' : 'Menü einklappen'}
+            aria-label="Menü ein- oder ausklappen"
+          >
+            {collapsed ? '»' : '«'}
+          </button>
         </div>
         {NAV.map(n => (
-          <button key={n.id} className={'nav-item' + (page === n.id ? ' active' : '')} onClick={() => setPage(n.id)}>
+          <button
+            key={n.id}
+            className={'nav-item' + (page === n.id ? ' active' : '')}
+            onClick={() => setPage(n.id)}
+            title={n.label}
+          >
             {n.icon}
-            {n.label}
+            {!collapsed && n.label}
           </button>
         ))}
-        <div className="sidebar-footer">Internes Marketing-Tool · v1.0</div>
+        {!collapsed && <div className="sidebar-footer">Internes Marketing-Tool · v1.0</div>}
       </aside>
       <main className="main">
         {page === 'generator' && <GeneratorPage request={request} edit={editFor('ig')} />}

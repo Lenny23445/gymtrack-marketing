@@ -1,6 +1,10 @@
 import type { PostTheme, Slide, Sticker, SlideBg, VAlign } from './types'
-import { FONT_STACKS, DEFAULT_STYLE } from './fonts'
+import { FONT_STACKS, DEFAULT_STYLE, HEAD_WEIGHT } from './fonts'
 import type { TextStyle, EffectKey } from './fonts'
+import { parseRich, stripRich } from './richtext'
+
+// stripRich wird von hier re-exportiert (Aufrufer importieren es weiterhin aus canvas).
+export { stripRich }
 
 // Rendering-Engine: zeichnet Posts in Instagram-Aufloesung (1080er) auf Canvas.
 // Design-Sprache: Apple-like — viel Weissraum, klare Typo, schwarz/weiss.
@@ -28,17 +32,22 @@ export const PALETTES: Record<PostTheme, Palette> = {
 let CUR_FAM: string = FONT_STACKS.sans
 let CUR_EFFECT: EffectKey = 'none'
 let CUR_STROKE = '#0A0A0A' // Konturfarbe = Hintergrund (fuer Kontur/Sticker)
+let CUR_HEAD_WEIGHT = 700 // Kopf-/Headline-Gewicht der aktiven Familie
 
 export function setDrawStyle(style: TextStyle | undefined, theme: PostTheme) {
   const s = style ?? DEFAULT_STYLE
   CUR_FAM = FONT_STACKS[s.font] ?? FONT_STACKS.sans
+  CUR_HEAD_WEIGHT = HEAD_WEIGHT[s.font] ?? 700
   CUR_EFFECT = s.effect ?? 'none'
   CUR_STROKE = PALETTES[theme].bg
 }
 
-// Font-String fuer den HAUPT-Text (Headline/Body/Hook) — nutzt die gewaehlte Familie.
+// Font-String fuer den HAUPT-Text (Headline/Body/Hook). Headline-Aufrufe kommen mit
+// weight>=700 → dann bestimmt die Familie ihr eigenes Kopf-Gewicht (z.B. Montserrat
+// 800 fuer den fetten TikTok-Look). Body-Text (weight 400) bleibt unveraendert.
 export function mainFont(weight: number, size: number): string {
-  return `${weight} ${size}px ${CUR_FAM}`
+  const w = weight >= 700 ? CUR_HEAD_WEIGHT : weight
+  return `${w} ${size}px ${CUR_FAM}`
 }
 
 // Aktuelle Pixel-Groesse aus ctx.font lesen (fuer effektabhaengige Linienbreiten).
@@ -158,30 +167,10 @@ export function fitText(
 
 export const DEFAULT_ACCENT = '#0A84FF'
 
-export interface RichTok { text: string; hl: boolean; spaceBefore: boolean }
+export interface RichTok { text: string; hl: boolean; color?: string; spaceBefore: boolean }
 
-// Parst *…*-Paare zu Segmenten (Markup entfernt). Ein einzelnes * ohne Partner
-// bleibt Literal, Zeilenumbrueche brechen ein Highlight nicht ueber die Zeile.
-function parseRich(raw: string): { text: string; hl: boolean }[] {
-  const segs: { text: string; hl: boolean }[] = []
-  const re = /\*([^*\n]+)\*/g
-  let last = 0
-  let m: RegExpExecArray | null
-  while ((m = re.exec(raw))) {
-    if (m.index > last) segs.push({ text: raw.slice(last, m.index), hl: false })
-    segs.push({ text: m[1], hl: true })
-    last = m.index + m[0].length
-  }
-  if (last < raw.length) segs.push({ text: raw.slice(last), hl: false })
-  return segs
-}
-
-// Markup entfernen — fuer Captions / Copy, wo die Sternchen nicht auftauchen sollen.
-export function stripRich(raw: string): string {
-  return raw.replace(/\*([^*\n]+)\*/g, '$1')
-}
-
-// In Wort-Tokens mit Highlight-Flag zerlegen (Highlight auf Wortgrenzen).
+// In Wort-Tokens mit Highlight-Flag/Farbe zerlegen (Highlight auf Wortgrenzen).
+// parseRich (aus richtext.ts) liefert Segmente mit optionaler Farbe bzw. Legacy-hl.
 export function tokenizeRich(raw: string): RichTok[] {
   const toks: RichTok[] = []
   let pendingSpace = false
@@ -190,7 +179,7 @@ export function tokenizeRich(raw: string): RichTok[] {
     for (const part of seg.text.split(/(\s+)/)) {
       if (part === '') continue
       if (/^\s+$/.test(part)) { pendingSpace = true; continue }
-      toks.push({ text: part, hl: seg.hl, spaceBefore: started && pendingSpace })
+      toks.push({ text: part, hl: !!seg.hl, color: seg.color, spaceBefore: started && pendingSpace })
       pendingSpace = false
       started = true
     }
@@ -266,7 +255,7 @@ export function drawRichLine(
   ctx.textAlign = 'left'
   line.forEach((t, i) => {
     if (i > 0 && t.spaceBefore) cx += spaceW
-    paintText(ctx, t.text, cx, y, t.hl ? accent : baseColor)
+    paintText(ctx, t.text, cx, y, t.color ?? (t.hl ? accent : baseColor))
     cx += ctx.measureText(t.text).width
   })
   ctx.textAlign = prevAlign
@@ -530,8 +519,15 @@ export function paintBg(
     const cx = w / 2
     const cy = h / 2
     const g = ctx.createLinearGradient(cx - Math.cos(a) * r, cy - Math.sin(a) * r, cx + Math.cos(a) * r, cy + Math.sin(a) * r)
-    g.addColorStop(0, bg.from)
-    g.addColorStop(1, bg.to)
+    // Misch-Punkt (mid): verschiebt, wo sich beide Farben zu 50/50 treffen (Default Mitte).
+    const mid = Math.max(0.02, Math.min(0.98, bg.mid ?? 0.5))
+    if (mid <= 0.5) {
+      g.addColorStop(0, bg.from)
+      g.addColorStop(Math.min(1, mid * 2), bg.to)
+    } else {
+      g.addColorStop(Math.max(0, mid * 2 - 1), bg.from)
+      g.addColorStop(1, bg.to)
+    }
     ctx.fillStyle = g
     ctx.fillRect(0, 0, w, h)
   } else {
