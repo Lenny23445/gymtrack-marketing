@@ -192,11 +192,16 @@ export function tokenizeRich(raw: string): RichTok[] {
 // und Groesse werden aus der aktiven ctx.font geparst — so muss kein Aufrufer sie durchreichen.
 function tokCtxFont(ctx: CanvasRenderingContext2D, tok: RichTok): string {
   if (!tok.font) return ctx.font
-  const m = /^(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)px/.exec(ctx.font)
-  const wt = m ? parseFloat(m[1]) : 700
-  const size = m ? parseFloat(m[2]) : 48
+  const f = ctx.font
+  // WICHTIG: Safari/iOS serialisiert ctx.font ANDERS als Chrome — Gewicht 700 wird zu
+  // "bold", die Reihenfolge kann abweichen. Die alte ^\d+-Regex scheiterte dort → size
+  // fiel auf 48 zurueck, die Wort-Schrift wurde winzig gezeichnet und riss die Abstaende
+  // auf. Deshalb Groesse UNVERANKERT aus "…Npx…" lesen und Fett per Keyword/600–900.
+  const sizeM = /(\d+(?:\.\d+)?)px/.exec(f)
+  const size = sizeM ? parseFloat(sizeM[1]) : 48
+  const headline = /(^|\s)(bold|bolder|[6-9]\d\d)(\s|,|$)/.test(f)
   const hw = HEAD_WEIGHT[tok.font] ?? 700
-  const w = wt >= 700 ? hw : wt
+  const w = headline ? hw : 400
   return `${w} ${size}px ${FONT_STACKS[tok.font]}`
 }
 
