@@ -778,6 +778,32 @@ table.plain td {
   touch-action: none;
 }
 
+.stk-rotate {
+  position: absolute;
+  top: -30px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #30d158;
+  border: 2px solid #fff;
+  cursor: grab;
+  touch-action: none;
+}
+
+/* kleine Verbindungslinie vom Sticker-Rand zum Dreh-Griff */
+.stk-rotate::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 14px;
+  width: 2px;
+  height: 12px;
+  background: #30d158;
+  transform: translateX(-50%);
+}
+
 /* ---------- Cloud-Sync-Status ---------- */
 
 .sync-dot {
@@ -1200,6 +1226,33 @@ table.plain td {
   border: none;
   padding: 0;
   cursor: pointer;
+}
+
+/* Zweite Leiste: Schrift der Auswahl. Chips zeigen ihre eigene Schrift als Vorschau. */
+.rte-bar-fonts {
+  gap: 5px;
+}
+
+.rte-font {
+  padding: 3px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 1.2;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.12s, transform 0.12s;
+}
+
+.rte-font:hover {
+  transform: translateY(-1px);
+  border-color: var(--text-2);
+}
+
+.rte-font-reset {
+  font-weight: 800;
 }
 
 .rte {

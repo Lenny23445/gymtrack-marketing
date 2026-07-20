@@ -1,14 +1,17 @@
 import { useEffect, useRef } from 'react'
-import { parseRich, wrapColor, toHex } from '../lib/richtext'
+import { parseRich, wrapRich, toHex } from '../lib/richtext'
+import { FONTS, FONT_STACKS, fontKeyFromFamily } from '../lib/fonts'
+import type { FontKey } from '../lib/fonts'
 
 // Rich-Text-Editor OHNE Sternchen: Text schreiben wie gewohnt, eine Passage mit der
-// Maus/dem Finger MARKIEREN und in der Farbleiste eine Farbe antippen → die Auswahl
-// wird farbig. „Standard" hebt die Farbe wieder auf. Intern wird alles als Farb-Token
-// (siehe lib/richtext.ts) gespeichert; der Canvas rendert exakt diese Farben.
+// Maus/dem Finger MARKIEREN und in der Leiste eine Farbe ODER Schriftart antippen → die
+// Auswahl wird eingefaerbt bzw. bekommt die Schrift. „A" hebt die Farbe wieder auf,
+// „Aa" die Schrift. Mehrere Passagen koennen jeweils EIGENE Farbe/Schrift tragen. Intern
+// wird alles als Token (siehe lib/richtext.ts) gespeichert; der Canvas rendert exakt das.
 //
 // Umsetzung: ein contentEditable-Feld mit white-space: pre-wrap. Enter/Umbruch wird als
 // echtes \n eingefuegt (keine <div>-Bloecke), Einfuegen wird auf Klartext reduziert —
-// dadurch bleibt die Serialisierung robust: Textknoten (inkl. \n) + Farb-Spans.
+// dadurch bleibt die Serialisierung robust: Textknoten (inkl. \n) + Farb-/Schrift-Spans.
 
 const BASE = '#1D1D1F' // Basis-Textfarbe im Editor = „keine Farbe"
 
@@ -19,29 +22,48 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
-// Wert (Token-String) → HTML fuer das Editor-Feld. Farb-Tokens und Legacy-*Sternchen*
-// werden zu farbigen <span>; \n bleibt als Zeichen (pre-wrap rendert den Umbruch).
+// Wert (Token-String) → HTML fuers Editor-Feld. Farb-/Schrift-Tokens und Legacy-*Sternchen*
+// werden zu gestylten <span>; \n bleibt als Zeichen (pre-wrap rendert den Umbruch).
 function toHtml(value: string, accent: string): string {
   if (!value) return ''
   return parseRich(value)
     .map(seg => {
       const color = seg.color ?? (seg.hl ? accent : undefined)
       const text = escapeHtml(seg.text)
-      return color ? `<span style="color:${color}">${text}</span>` : text
+      const styles: string[] = []
+      if (color) styles.push(`color:${color}`)
+      if (seg.font && FONT_STACKS[seg.font]) styles.push(`font-family:${FONT_STACKS[seg.font]}`)
+      return styles.length ? `<span style="${styles.join(';')}">${text}</span>` : text
     })
     .join('')
 }
 
-// Editor-DOM → Token-String. Effektive Farbe je Textknoten aus dem Computed Style;
-// Farbe == BASE ⇒ Klartext. Farb-Runs werden an \n gebrochen (Tokens nie ueber Zeilen).
+// Naechste explizite Schrift-Angabe eines Text-Knotens (inline font-family oder <font face>)
+// → FontKey. Die ERSTE gefundene Angabe gewinnt: „inherit"/unbekannt = ausdruecklich keine
+// Schrift (Reset), damit ein aeusseres Schrift-Span nicht faelschlich durchschlaegt.
+function nodeFont(start: HTMLElement | null, root: HTMLElement): FontKey | undefined {
+  let n: HTMLElement | null = start
+  while (n && n !== root) {
+    let ff: string | null = null
+    if (n.style && n.style.fontFamily) ff = n.style.fontFamily
+    else if (n.nodeName === 'FONT') ff = n.getAttribute('face')
+    if (ff) return fontKeyFromFamily(ff)
+    n = n.parentElement
+  }
+  return undefined
+}
+
+// Editor-DOM → Token-String. Farbe je Textknoten aus dem Computed Style, Schrift aus der
+// naechsten expliziten Angabe. Runs werden an \n gebrochen (Tokens nie ueber Zeilen).
 function serialize(root: HTMLElement): string {
   let out = ''
-  const emit = (text: string, hex: string) => {
+  const emit = (text: string, hex: string, font: FontKey | undefined) => {
+    const color = hex && hex !== BASE ? hex : undefined
     const parts = text.split('\n')
     parts.forEach((p, i) => {
       if (i > 0) out += '\n'
       if (!p) return
-      out += hex && hex !== BASE ? wrapColor(p, hex) : p
+      out += wrapRich(p, color, font)
     })
   }
   const walk = (node: Node) => {
@@ -51,7 +73,7 @@ function serialize(root: HTMLElement): string {
         if (!t) return
         const el = ch.parentElement
         const hex = el ? toHex(getComputedStyle(el).color) : BASE
-        emit(t, hex)
+        emit(t, hex, nodeFont(el, root))
       } else if (ch.nodeName === 'BR') {
         out += '\n'
       } else if (ch.nodeType === Node.ELEMENT_NODE) {
@@ -65,7 +87,7 @@ function serialize(root: HTMLElement): string {
   walk(root)
   // contentEditable setzt teils geschuetzte Leerzeichen (nbsp) → auf normale mappen,
   // dann fuehrende/abschliessende Leerzeilen kappen.
-  return out.replace(/ /g, ' ').replace(/\n+$/, '')
+  return out.replace(/ /g, ' ').replace(/\n+$/, '')
 }
 
 export function RichTextEditor({
@@ -93,7 +115,7 @@ export function RichTextEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value])
 
-  // Letzte nicht-leere Auswahl innerhalb des Editors merken (fuer die Farb-Buttons,
+  // Letzte nicht-leere Auswahl innerhalb des Editors merken (fuer die Leisten-Buttons,
   // falls der Fokus beim Klick kurz wechselt — v.a. beim nativen Farbwaehler).
   useEffect(() => {
     const onSel = () => {
@@ -112,22 +134,40 @@ export function RichTextEditor({
     if (el) onChange(serialize(el))
   }
 
-  const applyColor = (color: string | null) => {
+  // Auswahl (ggf. zuletzt gemerkte) sicherstellen; liefert false, wenn nichts markiert ist.
+  const ensureSelection = (): boolean => {
     const el = ref.current
-    if (!el) return
+    if (!el) return false
     el.focus()
     const sel = window.getSelection()
-    if (!sel) return
-    // Auswahl wiederherstellen, falls sie verloren ging.
+    if (!sel) return false
     const inside = sel.rangeCount > 0 && el.contains(sel.getRangeAt(0).commonAncestorContainer)
     if ((sel.isCollapsed || !inside) && lastRange.current) {
       sel.removeAllRanges()
       sel.addRange(lastRange.current)
     }
-    if (sel.isCollapsed) return // nichts markiert → nichts tun
+    return !sel.isCollapsed
+  }
+
+  const rememberSelection = () => {
+    const sel = window.getSelection()
+    if (sel && sel.rangeCount > 0) lastRange.current = sel.getRangeAt(0).cloneRange()
+  }
+
+  const applyColor = (color: string | null) => {
+    if (!ensureSelection()) return
     document.execCommand('styleWithCSS', false, 'true')
     document.execCommand('foreColor', false, color ?? BASE)
-    if (sel.rangeCount > 0) lastRange.current = sel.getRangeAt(0).cloneRange()
+    rememberSelection()
+    push()
+  }
+
+  const applyFont = (key: FontKey | null) => {
+    if (!ensureSelection()) return
+    // fontName erzeugt je nach Browser <font face> oder <span style="font-family">; beides
+    // liest serialize aus. „inherit" = Schrift wieder entfernen (folgt dem Slide-Standard).
+    document.execCommand('fontName', false, key ? FONT_STACKS[key] : 'inherit')
+    rememberSelection()
     push()
   }
 
@@ -144,11 +184,15 @@ export function RichTextEditor({
     document.execCommand('insertText', false, text)
   }
 
+  // Buttons halten die Text-Auswahl (preventDefault auf mousedown). NICHT auf dem nativen
+  // Farbwaehler-Label — sonst oeffnet Chromium/WebKit das Farbmenue gar nicht (alter Bug).
+  const keepSel = (e: React.MouseEvent) => e.preventDefault()
+
   return (
     <div className="rte-wrap">
-      <div className="rte-bar" onMouseDown={e => e.preventDefault()}>
+      <div className="rte-bar">
         <span className="rte-bar-label">Auswahl färben</span>
-        <button type="button" className="rte-swatch rte-reset" title="Farbe entfernen" onClick={() => applyColor(null)}>
+        <button type="button" className="rte-swatch rte-reset" title="Farbe entfernen" onMouseDown={keepSel} onClick={() => applyColor(null)}>
           A
         </button>
         <button
@@ -156,6 +200,7 @@ export function RichTextEditor({
           className="rte-swatch"
           style={{ background: accent }}
           title="Akzentfarbe"
+          onMouseDown={keepSel}
           onClick={() => applyColor(accent)}
         />
         {QUICK.map(c => (
@@ -165,13 +210,33 @@ export function RichTextEditor({
             className="rte-swatch"
             style={{ background: c }}
             title={c}
+            onMouseDown={keepSel}
             onClick={() => applyColor(c)}
           />
         ))}
-        <label className="rte-swatch rte-custom" title="Freie Farbe">
+        <label className="rte-swatch rte-custom" title="Alle Farben — eigene wählen">
           <span>＋</span>
           <input type="color" onChange={e => applyColor(e.target.value.toUpperCase())} />
         </label>
+      </div>
+      <div className="rte-bar rte-bar-fonts">
+        <span className="rte-bar-label">Auswahl-Schrift</span>
+        <button type="button" className="rte-font rte-font-reset" title="Schrift zurücksetzen" onMouseDown={keepSel} onClick={() => applyFont(null)}>
+          Aa
+        </button>
+        {FONTS.map(f => (
+          <button
+            key={f.key}
+            type="button"
+            className="rte-font"
+            style={{ fontFamily: f.stack }}
+            title={f.label}
+            onMouseDown={keepSel}
+            onClick={() => applyFont(f.key)}
+          >
+            {f.label}
+          </button>
+        ))}
       </div>
       <div
         ref={ref}

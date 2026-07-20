@@ -1,6 +1,6 @@
 import type { PostTheme, Slide, Sticker, SlideBg, VAlign } from './types'
 import { FONT_STACKS, DEFAULT_STYLE, HEAD_WEIGHT } from './fonts'
-import type { TextStyle, EffectKey } from './fonts'
+import type { TextStyle, EffectKey, FontKey } from './fonts'
 import { parseRich, stripRich } from './richtext'
 
 // stripRich wird von hier re-exportiert (Aufrufer importieren es weiterhin aus canvas).
@@ -167,10 +167,10 @@ export function fitText(
 
 export const DEFAULT_ACCENT = '#0A84FF'
 
-export interface RichTok { text: string; hl: boolean; color?: string; spaceBefore: boolean }
+export interface RichTok { text: string; hl: boolean; color?: string; font?: FontKey; spaceBefore: boolean }
 
-// In Wort-Tokens mit Highlight-Flag/Farbe zerlegen (Highlight auf Wortgrenzen).
-// parseRich (aus richtext.ts) liefert Segmente mit optionaler Farbe bzw. Legacy-hl.
+// In Wort-Tokens mit Highlight-Flag/Farbe/Schrift zerlegen (auf Wortgrenzen).
+// parseRich (aus richtext.ts) liefert Segmente mit optionaler Farbe/Schrift bzw. Legacy-hl.
 export function tokenizeRich(raw: string): RichTok[] {
   const toks: RichTok[] = []
   let pendingSpace = false
@@ -179,7 +179,7 @@ export function tokenizeRich(raw: string): RichTok[] {
     for (const part of seg.text.split(/(\s+)/)) {
       if (part === '') continue
       if (/^\s+$/.test(part)) { pendingSpace = true; continue }
-      toks.push({ text: part, hl: !!seg.hl, color: seg.color, spaceBefore: started && pendingSpace })
+      toks.push({ text: part, hl: !!seg.hl, color: seg.color, font: seg.font, spaceBefore: started && pendingSpace })
       pendingSpace = false
       started = true
     }
@@ -187,23 +187,47 @@ export function tokenizeRich(raw: string): RichTok[] {
   return toks
 }
 
+// Font-String fuer EIN Token: hat es eine eigene Schrift, wird deren Familie + Kopf-
+// Gewicht genutzt; sonst bleibt die aktuell gesetzte ctx.font (Slide-Standard). Gewicht
+// und Groesse werden aus der aktiven ctx.font geparst — so muss kein Aufrufer sie durchreichen.
+function tokCtxFont(ctx: CanvasRenderingContext2D, tok: RichTok): string {
+  if (!tok.font) return ctx.font
+  const m = /^(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)px/.exec(ctx.font)
+  const wt = m ? parseFloat(m[1]) : 700
+  const size = m ? parseFloat(m[2]) : 48
+  const hw = HEAD_WEIGHT[tok.font] ?? 700
+  const w = wt >= 700 ? hw : wt
+  return `${w} ${size}px ${FONT_STACKS[tok.font]}`
+}
+
+// Ein Token messen und dabei die aktive ctx.font (Slide-Standard) intakt lassen.
+function measureTok(ctx: CanvasRenderingContext2D, tok: RichTok, base: string): number {
+  if (!tok.font) return ctx.measureText(tok.text).width
+  ctx.font = tokCtxFont(ctx, tok)
+  const w = ctx.measureText(tok.text).width
+  ctx.font = base
+  return w
+}
+
 function richLineWidth(ctx: CanvasRenderingContext2D, line: RichTok[]): number {
+  const base = ctx.font
   const spaceW = ctx.measureText(' ').width
   let w = 0
   line.forEach((t, i) => {
     if (i > 0 && t.spaceBefore) w += spaceW
-    w += ctx.measureText(t.text).width
+    w += measureTok(ctx, t, base)
   })
   return w
 }
 
 function richWrap(ctx: CanvasRenderingContext2D, toks: RichTok[], maxWidth: number): RichTok[][] {
+  const base = ctx.font
   const spaceW = ctx.measureText(' ').width
   const lines: RichTok[][] = []
   let line: RichTok[] = []
   let w = 0
   for (const t of toks) {
-    const tw = ctx.measureText(t.text).width
+    const tw = measureTok(ctx, t, base)
     const lead = line.length > 0 && t.spaceBefore ? spaceW : 0
     if (line.length > 0 && w + lead + tw > maxWidth) {
       lines.push(line)
@@ -249,14 +273,17 @@ export function drawRichLine(
   accent: string,
   align: 'left' | 'center' = 'left',
 ) {
+  const base = ctx.font
   const spaceW = ctx.measureText(' ').width
   let cx = align === 'center' ? x - richLineWidth(ctx, line) / 2 : x
   const prevAlign = ctx.textAlign
   ctx.textAlign = 'left'
   line.forEach((t, i) => {
     if (i > 0 && t.spaceBefore) cx += spaceW
+    if (t.font) ctx.font = tokCtxFont(ctx, t)
     paintText(ctx, t.text, cx, y, t.color ?? (t.hl ? accent : baseColor))
     cx += ctx.measureText(t.text).width
+    if (t.font) ctx.font = base
   })
   ctx.textAlign = prevAlign
 }
@@ -708,7 +735,16 @@ export async function drawStickers(canvas: HTMLCanvasElement, stickers?: Sticker
       const img = await loadImg(s.dataUrl)
       const w = Math.max(1, s.nscale * W)
       const h = w * (img.height / Math.max(1, img.width))
-      ctx.drawImage(img, s.nx * W - w / 2, s.ny * H - h / 2, w, h)
+      const rot = ((s.rot ?? 0) * Math.PI) / 180
+      if (rot) {
+        ctx.save()
+        ctx.translate(s.nx * W, s.ny * H)
+        ctx.rotate(rot)
+        ctx.drawImage(img, -w / 2, -h / 2, w, h)
+        ctx.restore()
+      } else {
+        ctx.drawImage(img, s.nx * W - w / 2, s.ny * H - h / 2, w, h)
+      }
     } catch {
       /* kaputten Sticker überspringen */
     }

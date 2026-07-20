@@ -61,6 +61,25 @@ export const HEAD_WEIGHT: Record<FontKey, number> = {
   rounded: 700,
 }
 
+// Erste Familie jedes Stacks (klein, ohne Anfuehrungszeichen) → FontKey. Damit bildet
+// der Editor die per Auswahl gesetzte Schrift eines Text-Knotens zurueck auf einen Key ab.
+const FIRST_FAMILY: Record<string, FontKey> = (() => {
+  const m: Record<string, FontKey> = {}
+  ;(Object.keys(FONT_STACKS) as FontKey[]).forEach(k => {
+    const first = FONT_STACKS[k].split(',')[0].trim().replace(/^["']|["']$/g, '').toLowerCase()
+    m[first] = k
+  })
+  return m
+})()
+
+// Eine (computed oder inline) font-family-Angabe → FontKey, sonst undefined (= keine
+// explizite Schrift, folgt der Slide-Standardschrift).
+export function fontKeyFromFamily(fontFamily: string | undefined | null): FontKey | undefined {
+  if (!fontFamily) return undefined
+  const first = fontFamily.split(',')[0].trim().replace(/^["']|["']$/g, '').toLowerCase()
+  return FIRST_FAMILY[first]
+}
+
 export const FONTS: { key: FontKey; label: string; stack: string }[] = [
   { key: 'sans', label: 'Standard', stack: FONT_STACKS.sans },
   { key: 'tiktok', label: 'TikTok', stack: FONT_STACKS.tiktok },

@@ -18,15 +18,25 @@ function StickerItem({
   onChange: (s: Sticker) => void
   onDelete: () => void
 }) {
-  const mode = useRef<null | 'move' | 'resize'>(null)
-  const start = useRef({ px: 0, py: 0, nx: 0, ny: 0, nscale: 0 })
+  const mode = useRef<null | 'move' | 'resize' | 'rotate'>(null)
+  // cx/cy = Sticker-Mittelpunkt in Client-Pixeln (fuer die Winkelberechnung beim Drehen).
+  const start = useRef({ px: 0, py: 0, nx: 0, ny: 0, nscale: 0, cx: 0, cy: 0 })
 
-  const begin = (e: React.PointerEvent, m: 'move' | 'resize') => {
+  const begin = (e: React.PointerEvent, m: 'move' | 'resize' | 'rotate') => {
     e.stopPropagation()
     e.preventDefault()
     ;(e.target as Element).setPointerCapture(e.pointerId)
     mode.current = m
-    start.current = { px: e.clientX, py: e.clientY, nx: s.nx, ny: s.ny, nscale: s.nscale }
+    const r = stageRef.current?.getBoundingClientRect()
+    start.current = {
+      px: e.clientX,
+      py: e.clientY,
+      nx: s.nx,
+      ny: s.ny,
+      nscale: s.nscale,
+      cx: r ? r.left + s.nx * r.width : e.clientX,
+      cy: r ? r.top + s.ny * r.height : e.clientY,
+    }
   }
 
   const move = (e: React.PointerEvent) => {
@@ -38,8 +48,13 @@ function StickerItem({
         nx: clamp(start.current.nx + (e.clientX - start.current.px) / r.width, 0, 1),
         ny: clamp(start.current.ny + (e.clientY - start.current.py) / r.height, 0, 1),
       })
-    } else {
+    } else if (mode.current === 'resize') {
       onChange({ ...s, nscale: clamp(start.current.nscale + ((e.clientX - start.current.px) / r.width) * 2, 0.05, 1.4) })
+    } else {
+      // Drehen: Winkel vom Mittelpunkt zum Zeiger. Griff sitzt oben → +90°, damit
+      // „Zeiger direkt oben" 0° bedeutet.
+      const ang = (Math.atan2(e.clientY - start.current.cy, e.clientX - start.current.cx) * 180) / Math.PI + 90
+      onChange({ ...s, rot: Math.round((ang % 360) + 360) % 360 })
     }
   }
 
@@ -55,7 +70,12 @@ function StickerItem({
   return (
     <div
       className="stk"
-      style={{ left: `${s.nx * 100}%`, top: `${s.ny * 100}%`, width: `${s.nscale * 100}%` }}
+      style={{
+        left: `${s.nx * 100}%`,
+        top: `${s.ny * 100}%`,
+        width: `${s.nscale * 100}%`,
+        transform: `translate(-50%, -50%) rotate(${s.rot ?? 0}deg)`,
+      }}
       onPointerDown={e => begin(e, 'move')}
       onPointerMove={move}
       onPointerUp={end}
@@ -72,6 +92,13 @@ function StickerItem({
       >
         ×
       </button>
+      <span
+        className="stk-rotate"
+        title="Drehen"
+        onPointerDown={e => begin(e, 'rotate')}
+        onPointerMove={move}
+        onPointerUp={end}
+      />
       <span
         className="stk-resize"
         title="Größe ziehen"

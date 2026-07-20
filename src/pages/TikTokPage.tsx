@@ -23,14 +23,41 @@ const ALIGNS: { value: VAlign; label: string }[] = [
   { value: 'bottom', label: 'Unten' },
 ]
 
+// Entwurf des aktuell bearbeiteten TikTok-Posts, damit ein Seiten-Reload den Fortschritt
+// (Slides, Text/Farben/Schriften, Design, aktiver Slide) nicht verwirft.
+const DRAFT_KEY = 'tt-draft-v1'
+interface TikTokDraft {
+  concept: TikTokConcept
+  cat: Category
+  theme: PostTheme
+  accent: string
+  style: TextStyle
+  slideIdx: number
+  editId: string | null
+  editCreatedAt: number | null
+}
+function readDraft(): TikTokDraft | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY)
+    if (!raw) return null
+    const d = JSON.parse(raw)
+    if (d && d.concept && Array.isArray(d.concept.slides)) return d as TikTokDraft
+  } catch {
+    /* defekter/zu grosser Draft → ignorieren */
+  }
+  return null
+}
+
 export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
-  const [cat, setCat] = useState<Category>('problem')
-  const [theme, setTheme] = useState<PostTheme>('dark')
-  const [accent, setAccent] = useState(DEFAULT_ACCENT)
-  const [style, setStyle] = useState<TextStyle>(DEFAULT_STYLE)
+  // Einmalig beim Mounten den gespeicherten Entwurf lesen (vor dem Zufalls-Konzept).
+  const [d0] = useState<TikTokDraft | null>(() => readDraft())
+  const [cat, setCat] = useState<Category>(d0?.cat ?? 'problem')
+  const [theme, setTheme] = useState<PostTheme>(d0?.theme ?? 'dark')
+  const [accent, setAccent] = useState(d0?.accent ?? DEFAULT_ACCENT)
+  const [style, setStyle] = useState<TextStyle>(d0?.style ?? DEFAULT_STYLE)
   const fontsReady = useFontsReady()
-  const [concept, setConcept] = useState<TikTokConcept>(() => generateTikTok(randomIdea('problem')))
-  const [slideIdx, setSlideIdx] = useState(0)
+  const [concept, setConcept] = useState<TikTokConcept>(() => d0?.concept ?? generateTikTok(randomIdea('problem')))
+  const [slideIdx, setSlideIdx] = useState(d0?.slideIdx ?? 0)
   const [saved, setSaved] = useState(false)
   // Zwingt den Rich-Editor zum Neu-Laden, wenn sich der Slide-Inhalt NICHT durchs
   // Tippen aendert (neues Konzept, Variante, Re-Edit, Anzahl, Loeschen).
@@ -39,8 +66,8 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
   // Hilfslinien (mittig) waehrend das Textfeld gezogen wird.
   const [guides, setGuides] = useState<{ v: boolean; h: boolean } | null>(null)
   // Beim Nachbearbeiten eines gespeicherten TikTok-Posts: id + createdAt merken.
-  const [editId, setEditId] = useState<string | null>(null)
-  const [editCreatedAt, setEditCreatedAt] = useState<number | null>(null)
+  const [editId, setEditId] = useState<string | null>(d0?.editId ?? null)
+  const [editCreatedAt, setEditCreatedAt] = useState<number | null>(d0?.editCreatedAt ?? null)
   // Screenshot-Bibliothek + geladene Bilder pro ID. Jeder Slide referenziert
   // sein eigenes Bild ueber shotId — so kann jeder Slide ein anderes Bild haben.
   const { shots, add, remove } = useShots()
@@ -113,6 +140,16 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [concept])
+
+  // Aktuellen Bearbeitungsstand als Entwurf sichern → uebersteht Seiten-Reload.
+  useEffect(() => {
+    const draft: TikTokDraft = { concept, cat, theme, accent, style, slideIdx, editId, editCreatedAt }
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(draft))
+    } catch {
+      /* Speicher voll (grosse Bilder) → Entwurf diesmal nicht sichern */
+    }
+  }, [concept, cat, theme, accent, style, slideIdx, editId, editCreatedAt])
 
   // Gespeicherten TikTok-Post aus der Datenbank zum Nachbearbeiten laden.
   useEffect(() => {

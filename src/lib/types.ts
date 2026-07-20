@@ -65,6 +65,7 @@ export interface Sticker {
   nx: number // Mittelpunkt X, Anteil der Breite
   ny: number // Mittelpunkt Y, Anteil der Höhe
   nscale: number // Breite als Anteil der Canvas-Breite
+  rot?: number // Drehung in Grad (im/gegen den Uhrzeigersinn), 0 = keine
 }
 
 // Hintergrund eines Slides: Theme-Standard, Vollton, Farbverlauf oder eigenes Bild.
