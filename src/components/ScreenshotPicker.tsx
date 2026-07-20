@@ -4,7 +4,8 @@ import type { Shot } from '../lib/screenshots'
 
 // Geteilter Picker: laedt/verwaltet die Screenshot-Bibliothek und liefert das
 // gewaehlte Bild als HTMLImageElement zum Zeichnen auf Canvas.
-// Upload per Button oder ⌘V. Auswahl togglt (nochmal klicken = abwaehlen).
+// Upload per Button (mehrere waehlbar), ⌘V oder Drag & Drop (auch mehrere auf einmal).
+// Auswahl togglt (nochmal klicken = abwaehlen).
 // library: optional eine bereits geladene Bibliothek von aussen reinreichen,
 // damit mehrere Picker auf derselben Seite denselben Stand teilen (z. B. TikTok:
 // pro Slide ein eigenes Bild). Ohne library nutzt der Picker seinen eigenen Hook.
@@ -23,14 +24,19 @@ export function ScreenshotPicker({
   const { shots, add, remove } = library ?? own
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [drag, setDrag] = useState(false)
 
-  const upload = async (file?: File) => {
-    if (!file) return
+  // Ein oder mehrere Bilder in die Bibliothek laden; das zuletzt hinzugefuegte wird
+  // ausgewaehlt (beim TikTok-Picker also dem aktiven Slide zugewiesen).
+  const uploadFiles = async (files: File[]) => {
+    const imgs = files.filter(f => f.type.startsWith('image/'))
+    if (imgs.length === 0) return
     setErr(null)
     setBusy(true)
     try {
-      const s = await add(file)
-      onSelect(await loadImage(s.dataUrl), s.id)
+      let last: Shot | null = null
+      for (const f of imgs) last = await add(f)
+      if (last) onSelect(await loadImage(last.dataUrl), last.id)
     } catch (e) {
       setErr((e as Error).message)
     } finally {
@@ -38,11 +44,11 @@ export function ScreenshotPicker({
     }
   }
 
-  // ⌘V: Screenshot direkt aus der Zwischenablage in die Bibliothek
+  // ⌘V: Screenshot(s) direkt aus der Zwischenablage in die Bibliothek
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
-      const file = e.clipboardData?.files?.[0]
-      if (file) upload(file)
+      const files = e.clipboardData?.files
+      if (files && files.length) uploadFiles([...files])
     }
     window.addEventListener('paste', onPaste)
     return () => window.removeEventListener('paste', onPaste)
@@ -61,18 +67,45 @@ export function ScreenshotPicker({
     }
   }
 
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setDrag(false)
+    const files = e.dataTransfer?.files
+    if (files && files.length) uploadFiles([...files])
+  }
+
   return (
-    <div>
+    <div
+      className={'dropzone' + (drag ? ' drag' : '')}
+      onDragOver={e => {
+        e.preventDefault()
+        if (!drag) setDrag(true)
+      }}
+      onDragLeave={e => {
+        e.preventDefault()
+        setDrag(false)
+      }}
+      onDrop={onDrop}
+    >
       <div className="row" style={{ marginBottom: 10 }}>
         <label className="btn btn-sm btn-primary" style={{ cursor: 'pointer' }}>
-          {busy ? 'Lädt…' : '+ Screenshot hochladen'}
-          <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => upload(e.target.files?.[0])} />
+          {busy ? 'Lädt…' : '+ Screenshots hochladen'}
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            style={{ display: 'none' }}
+            onChange={e => {
+              uploadFiles([...(e.target.files ?? [])])
+              e.currentTarget.value = ''
+            }}
+          />
         </label>
-        <span className="hint">{hint ?? 'Bleibt gespeichert, überall abrufbar. Auch mit ⌘V einfügbar.'}</span>
+        <span className="hint">{hint ?? 'Mehrere per Drag & Drop hierher ziehen, per Button wählen oder mit ⌘V einfügen. Bleibt gespeichert.'}</span>
       </div>
       {err && <p className="hint" style={{ color: '#b3261e', marginBottom: 8 }}>{err}</p>}
       {shots.length === 0 ? (
-        <p className="hint">Noch keine Screenshots in der Bibliothek. Lade welche hoch — sie stehen dann hier und im Post-Generator, in TikTok Slides und im Mockup-Studio bereit.</p>
+        <p className="hint">Noch keine Screenshots — zieh mehrere Bilder hierher oder lade sie hoch. Sie stehen dann hier und im Post-Generator, in TikTok Slides und im Mockup-Studio bereit.</p>
       ) : (
         <div className="shot-grid">
           {shots.map(s => (
@@ -93,6 +126,7 @@ export function ScreenshotPicker({
           ))}
         </div>
       )}
+      <div className="dropzone-overlay">Bilder hier ablegen</div>
     </div>
   )
 }

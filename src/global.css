@@ -1362,3 +1362,36 @@ table.plain td {
   justify-content: center;
   padding: 10px 0;
 }
+
+/* ---------- Screenshot-Drop-Zone (mehrere per Drag & Drop) ---------- */
+
+.dropzone {
+  position: relative;
+  border-radius: 12px;
+  transition: background 0.15s;
+}
+
+.dropzone.drag {
+  background: rgba(10, 132, 255, 0.04);
+  outline: 2px dashed #0a84ff;
+  outline-offset: 4px;
+}
+
+.dropzone-overlay {
+  display: none;
+}
+
+.dropzone.drag .dropzone-overlay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  background: rgba(10, 132, 255, 0.09);
+  color: #0a84ff;
+  font-size: 14px;
+  font-weight: 700;
+  pointer-events: none;
+  z-index: 4;
+}
