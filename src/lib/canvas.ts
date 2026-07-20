@@ -610,8 +610,18 @@ export function drawTikTokSlide(
   // die breiteste Zeile passt. Markup faerbt Passagen, misst aber ohne Sternchen.
   const rawLines = text.split('\n')
   const richLines = rawLines.map(l => tokenizeRich(l))
-  // Enger, „normaler" Zeilenabstand — vorher 1.16 wirkte bei allen Schriften zu luftig.
-  const LINE_H = 1.06
+  // Zeilenabstand fuer ALLE Schriften wie beim Standard („Aa"/sans): Basis 1.06 wird mit
+  // dem Verhaeltnis der Schrift-Box-Hoehe (aktive Schrift ÷ sans) skaliert. Schriften mit
+  // hoher Box (Impact/Oswald/Marker) bekommen sonst optisch weniger, niedrige mehr Luft —
+  // die Normierung gleicht das auf den sans-Look an.
+  const boxH = (fam: string, wt: number): number => {
+    ctx.font = `${wt} 100px ${fam}`
+    const m = ctx.measureText('Mg')
+    const b = m.fontBoundingBoxAscent + m.fontBoundingBoxDescent
+    return Number.isFinite(b) && b > 0 ? b : 100
+  }
+  const boxRatio = boxH(CUR_FAM, CUR_HEAD_WEIGHT) / boxH(FONT_STACKS.sans, 700)
+  const LINE_H = 1.06 * (Number.isFinite(boxRatio) && boxRatio > 0 ? boxRatio : 1)
   let size = 132
   for (; size >= 60; size -= 4) {
     ctx.font = mainFont(700, size)
