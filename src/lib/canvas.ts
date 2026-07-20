@@ -209,12 +209,22 @@ function measureTok(ctx: CanvasRenderingContext2D, tok: RichTok, base: string): 
   return w
 }
 
+// Breite des trennenden Leerzeichens VOR einem Token — in DESSEN Schrift gemessen, nicht
+// in der Standardschrift. Sonst reissen schmale Display-Fonts (Bebas/Anton/Oswald) die
+// Woerter mit dem breiten Sans-Leerzeichen auseinander (der „zu weit auseinander"-Bug).
+function tokSpaceW(ctx: CanvasRenderingContext2D, tok: RichTok, base: string): number {
+  if (!tok.font) return ctx.measureText(' ').width
+  ctx.font = tokCtxFont(ctx, tok)
+  const w = ctx.measureText(' ').width
+  ctx.font = base
+  return w
+}
+
 function richLineWidth(ctx: CanvasRenderingContext2D, line: RichTok[]): number {
   const base = ctx.font
-  const spaceW = ctx.measureText(' ').width
   let w = 0
   line.forEach((t, i) => {
-    if (i > 0 && t.spaceBefore) w += spaceW
+    if (i > 0 && t.spaceBefore) w += tokSpaceW(ctx, t, base)
     w += measureTok(ctx, t, base)
   })
   return w
@@ -222,13 +232,12 @@ function richLineWidth(ctx: CanvasRenderingContext2D, line: RichTok[]): number {
 
 function richWrap(ctx: CanvasRenderingContext2D, toks: RichTok[], maxWidth: number): RichTok[][] {
   const base = ctx.font
-  const spaceW = ctx.measureText(' ').width
   const lines: RichTok[][] = []
   let line: RichTok[] = []
   let w = 0
   for (const t of toks) {
     const tw = measureTok(ctx, t, base)
-    const lead = line.length > 0 && t.spaceBefore ? spaceW : 0
+    const lead = line.length > 0 && t.spaceBefore ? tokSpaceW(ctx, t, base) : 0
     if (line.length > 0 && w + lead + tw > maxWidth) {
       lines.push(line)
       line = [{ ...t, spaceBefore: false }]
@@ -274,12 +283,11 @@ export function drawRichLine(
   align: 'left' | 'center' = 'left',
 ) {
   const base = ctx.font
-  const spaceW = ctx.measureText(' ').width
   let cx = align === 'center' ? x - richLineWidth(ctx, line) / 2 : x
   const prevAlign = ctx.textAlign
   ctx.textAlign = 'left'
   line.forEach((t, i) => {
-    if (i > 0 && t.spaceBefore) cx += spaceW
+    if (i > 0 && t.spaceBefore) cx += tokSpaceW(ctx, t, base)
     if (t.font) ctx.font = tokCtxFont(ctx, t)
     paintText(ctx, t.text, cx, y, t.color ?? (t.hl ? accent : baseColor))
     cx += ctx.measureText(t.text).width
