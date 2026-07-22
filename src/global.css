@@ -885,9 +885,9 @@ table.plain td {
   display: block;
   width: 100%;
   height: 100%;
-  /* Ganzes Template unverzerrt einpassen — exakt die Proportionen der Vorlage */
-  object-fit: contain;
-  object-position: center;
+  /* Volle Breite (9:16); Hoehendifferenz wurde im PNG aus dem LEEREN Bereich
+     zwischen Top-Leiste und Aktionsleiste entfernt — Elemente bleiben unverzerrt */
+  object-fit: fill;
   user-select: none;
 }
 
