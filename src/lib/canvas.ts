@@ -1,4 +1,4 @@
-import type { PostTheme, Slide, Sticker, SlideBg, VAlign } from './types'
+import type { PostTheme, Slide, Sticker, SlideBg, SlideText, VAlign } from './types'
 import { FONT_STACKS, DEFAULT_STYLE, HEAD_WEIGHT } from './fonts'
 import type { TextStyle, EffectKey, FontKey } from './fonts'
 import { parseRich, stripRich } from './richtext'
@@ -446,6 +446,13 @@ export function drawSlide(
   footer(ctx, p, w, h)
 }
 
+// Frei verschiebbarer/skalierbarer Aufbau: Textblock-Mittelpunkt + Geräte-Mittelpunkt
+// & Skalierung, jeweils als Anteil (0..1). Fehlt ein Wert, gilt die Auto-Position.
+export interface MockupLayout {
+  text?: { nx: number; ny: number }
+  phone?: { nx: number; ny: number; scale: number }
+}
+
 export interface MockupSpec {
   img: HTMLImageElement
   headline: string
@@ -456,6 +463,7 @@ export interface MockupSpec {
   kickerText?: string
   accent?: string
   style?: TextStyle
+  layout?: MockupLayout
 }
 
 export function roundedPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
@@ -468,8 +476,11 @@ export function roundedPath(ctx: CanvasRenderingContext2D, x: number, y: number,
   ctx.closePath()
 }
 
-// Apple-artige App-Praesentation: Screenshot in iPhone-Rahmen auf ruhigem Grund
-export function drawMockup(canvas: HTMLCanvasElement, spec: MockupSpec) {
+// Apple-artige App-Praesentation: Screenshot in iPhone-Rahmen auf ruhigem Grund.
+// Text-Block und Gerät lassen sich per `layout` frei verschieben/skalieren (sonst
+// Auto-Position wie bisher). Gibt die normalisierten Rechtecke beider Elemente
+// zurück → die Bearbeiten-Griffe im Studio sitzen exakt darüber.
+export function drawMockup(canvas: HTMLCanvasElement, spec: MockupSpec): { text: TextRect; phone: TextRect } {
   const w = spec.w ?? 1080
   const h = spec.h ?? 1350
   const p = PALETTES[spec.theme]
@@ -481,51 +492,75 @@ export function drawMockup(canvas: HTMLCanvasElement, spec: MockupSpec) {
   ctx.fillStyle = p.bg
   ctx.fillRect(0, 0, w, h)
 
-  kicker(ctx, spec.kickerText ?? 'MY GYM TRACK', p, PAD, PAD + 30)
-
+  // ── Text-Block vermessen (Kicker + Headline + Sub) ──
   const head = richFit(ctx, spec.headline, contentW, 76, 48, 2, 700)
-  let y = PAD + 130
+  const headLH = head.size * 1.12
+  const subFit = richFit(ctx, spec.sub, contentW, 40, 30, 2, 400)
+  const subLH = subFit.size * 1.4
+  const kickerTop = 30 // Kicker-Baseline ab Blockoberkante
+  const headTop = 130 // Headline-Baseline ab Blockoberkante (wie zuvor PAD+130 vs PAD+30)
+  const blockH = headTop + (head.lines.length - 1) * headLH + 16 + subFit.lines.length * subLH + 20
+
+  // Blockoberkante: Auto = PAD; sonst aus Layout-Mittelpunkt zurückgerechnet.
+  const tCx = spec.layout?.text ? spec.layout.text.nx * w : w / 2
+  const leftX = tCx - contentW / 2
+  const topY = spec.layout?.text ? spec.layout.text.ny * h - blockH / 2 : PAD
+
+  kicker(ctx, spec.kickerText ?? 'MY GYM TRACK', p, leftX, topY + kickerTop)
+
+  let y = topY + headTop
   ctx.font = mainFont(700, head.size)
   for (const line of head.lines) {
-    drawRichLine(ctx, line, PAD, y, p.fg, accent)
-    y += head.size * 1.12
+    drawRichLine(ctx, line, leftX, y, p.fg, accent)
+    y += headLH
   }
-
-  const subFit = richFit(ctx, spec.sub, contentW, 40, 30, 2, 400)
-  y += 16
+  y += 16 - headLH + subLH
   ctx.font = mainFont(400, subFit.size)
   for (const line of subFit.lines) {
-    drawRichLine(ctx, line, PAD, y, p.muted, accent)
-    y += subFit.size * 1.4
+    drawRichLine(ctx, line, leftX, y, p.muted, accent)
+    y += subLH
   }
 
-  // Geraet: unterer Bereich, ragt bewusst aus dem Frame (Apple-Marketing-Stil)
-  const deviceTop = y + 60
-  const deviceH = h - deviceTop + 120 // unten angeschnitten
-  const ratio = spec.img.width / spec.img.height
-  const screenW = Math.min(620, deviceH * ratio * 0.96)
-  const bezel = 16
-  const deviceW = screenW + bezel * 2
-  const dx = (w - deviceW) / 2
-  const dy = deviceTop
+  const textRect: TextRect = {
+    nx: tCx / w,
+    ny: (topY + blockH / 2) / h,
+    nw: contentW / w,
+    nh: blockH / h,
+  }
 
-  // Schatten
+  // ── Gerät: Auto-Maße wie zuvor, dann optional per Layout skalieren/verschieben ──
+  const autoTop = topY + blockH + 60
+  const deviceH0 = h - autoTop + 120 // unten angeschnitten (Auto-Look)
+  const ratio = spec.img.width / spec.img.height
+  const screenW0 = Math.min(620, deviceH0 * ratio * 0.96)
+  const bezel = 16
+  const deviceW0 = screenW0 + bezel * 2
+
+  const scaleF = spec.layout?.phone?.scale ?? 1
+  const deviceW = deviceW0 * scaleF
+  const deviceH = deviceH0 * scaleF
+  const dCx = spec.layout?.phone ? spec.layout.phone.nx * w : w / 2
+  const dCy = spec.layout?.phone ? spec.layout.phone.ny * h : autoTop + deviceH0 / 2
+  const dx = dCx - deviceW / 2
+  const dy = dCy - deviceH / 2
+
+  // Schatten + Rahmen
   ctx.save()
   ctx.shadowColor = 'rgba(0,0,0,0.45)'
   ctx.shadowBlur = 90
   ctx.shadowOffsetY = 30
   ctx.fillStyle = spec.theme === 'dark' ? '#1C1C1E' : '#111111'
-  roundedPath(ctx, dx, dy, deviceW, deviceH, 92)
+  roundedPath(ctx, dx, dy, deviceW, deviceH, 92 * scaleF)
   ctx.fill()
   ctx.restore()
 
   // Screen (Screenshot, cover-fit, geclippt) — Rahmen ersetzt Hintergrund-Entfernung
-  const sx = dx + bezel
-  const sy = dy + bezel
-  const sw = deviceW - bezel * 2
-  const sh = deviceH - bezel * 2
+  const sx = dx + bezel * scaleF
+  const sy = dy + bezel * scaleF
+  const sw = deviceW - bezel * 2 * scaleF
+  const sh = deviceH - bezel * 2 * scaleF
   ctx.save()
-  roundedPath(ctx, sx, sy, sw, sh, 76)
+  roundedPath(ctx, sx, sy, sw, sh, 76 * scaleF)
   ctx.clip()
   const scale = Math.max(sw / spec.img.width, sh / spec.img.height)
   const iw = spec.img.width * scale
@@ -534,6 +569,11 @@ export function drawMockup(canvas: HTMLCanvasElement, spec: MockupSpec) {
   ctx.restore()
 
   footer(ctx, p, w, h)
+
+  return {
+    text: textRect,
+    phone: { nx: dCx / w, ny: dCy / h, nw: deviceW / w, nh: deviceH / h },
+  }
 }
 
 // Hintergrund eines Slides zeichnen: Theme, Vollton, Farbverlauf oder eigenes Bild.
@@ -680,7 +720,8 @@ export function drawTikTokShot(
   style?: TextStyle,
   bg?: SlideBg,
   bgImg?: HTMLImageElement | null,
-) {
+  layout?: { nx: number; ny: number; scale: number },
+): TextRect {
   const w = 1080
   const h = 1920
   const p = PALETTES[theme]
@@ -698,33 +739,40 @@ export function drawTikTokShot(
     y += head.size * 1.14
   }
 
-  // Geraet: vollstaendig sichtbar (nicht angeschnitten), zwischen Headline und Brand
-  const deviceTop = y + 56
+  // Geraet: Auto-Maße (vollständig sichtbar zwischen Headline und Brand), dann
+  // optional per layout frei verschieben/skalieren.
+  const deviceTop0 = y + 56
   const bottomReserve = 150
-  const deviceH = h - deviceTop - bottomReserve
+  const deviceH0 = h - deviceTop0 - bottomReserve
   const bezel = 16
   const ratio = img.width / img.height
-  let screenW = deviceH * ratio
-  if (screenW + bezel * 2 > contentW) screenW = contentW - bezel * 2
-  const deviceW = screenW + bezel * 2
-  const dx = (w - deviceW) / 2
-  const dy = deviceTop
+  let screenW0 = deviceH0 * ratio
+  if (screenW0 + bezel * 2 > contentW) screenW0 = contentW - bezel * 2
+  const deviceW0 = screenW0 + bezel * 2
+
+  const scaleF = layout?.scale ?? 1
+  const deviceW = deviceW0 * scaleF
+  const deviceH = deviceH0 * scaleF
+  const dCx = layout ? layout.nx * w : w / 2
+  const dCy = layout ? layout.ny * h : deviceTop0 + deviceH0 / 2
+  const dx = dCx - deviceW / 2
+  const dy = dCy - deviceH / 2
 
   ctx.save()
   ctx.shadowColor = 'rgba(0,0,0,0.45)'
   ctx.shadowBlur = 90
   ctx.shadowOffsetY = 30
   ctx.fillStyle = theme === 'dark' ? '#1C1C1E' : '#111111'
-  roundedPath(ctx, dx, dy, deviceW, deviceH, 92)
+  roundedPath(ctx, dx, dy, deviceW, deviceH, 92 * scaleF)
   ctx.fill()
   ctx.restore()
 
-  const sx = dx + bezel
-  const sy = dy + bezel
-  const sw = deviceW - bezel * 2
-  const sh = deviceH - bezel * 2
+  const sx = dx + bezel * scaleF
+  const sy = dy + bezel * scaleF
+  const sw = deviceW - bezel * 2 * scaleF
+  const sh = deviceH - bezel * 2 * scaleF
   ctx.save()
-  roundedPath(ctx, sx, sy, sw, sh, 76)
+  roundedPath(ctx, sx, sy, sw, sh, 76 * scaleF)
   ctx.clip()
   const scale = Math.max(sw / img.width, sh / img.height)
   const iw = img.width * scale
@@ -737,6 +785,8 @@ export function drawTikTokShot(
   ctx.textAlign = 'center'
   ctx.fillText('MY GYM TRACK', w / 2, h - PAD)
   ctx.textAlign = 'left'
+
+  return { nx: dCx / w, ny: dCy / h, nw: deviceW / w, nh: deviceH / h }
 }
 
 function loadImg(src: string): Promise<HTMLImageElement> {
@@ -774,6 +824,67 @@ export async function drawStickers(canvas: HTMLCanvasElement, stickers?: Sticker
       /* kaputten Sticker überspringen */
     }
   }
+}
+
+export interface TextElRect {
+  id: string
+  nx: number
+  ny: number
+  nw: number
+  nh: number
+}
+
+// Freie Text-Elemente auf das (bereits gezeichnete) Canvas zeichnen — für Vorschau,
+// PNG-Export und Thumbnails. Synchron (Fonts müssen geladen sein). Liefert je Element
+// das normalisierte Rechteck zurück, damit die DOM-Griffe exakt darüber sitzen.
+// baseStyle = Slide-Standardschrift (greift, wenn das Element keine eigene font hat).
+export function drawSlideTexts(
+  canvas: HTMLCanvasElement,
+  texts: SlideText[] | undefined,
+  baseStyle?: TextStyle,
+): TextElRect[] {
+  if (!texts || texts.length === 0) return []
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return []
+  const W = canvas.width
+  const H = canvas.height
+  const base = baseStyle ?? DEFAULT_STYLE
+  const rects: TextElRect[] = []
+  for (const t of texts) {
+    const key = t.font ?? base.font
+    const fam = FONT_STACKS[key] ?? FONT_STACKS.sans
+    const weight = HEAD_WEIGHT[key] ?? 700
+    const size = Math.max(8, t.nsize * W)
+    ctx.save()
+    ctx.font = `${weight} ${size}px ${fam}`
+    ctx.textBaseline = 'alphabetic'
+    ctx.textAlign = 'center'
+    const lines = t.text.split('\n')
+    const lh = size * 1.12
+    const widest = Math.max(1, ...lines.map(l => ctx.measureText(l || ' ').width))
+    const blockH = lines.length * lh
+    ctx.translate(t.nx * W, t.ny * H)
+    if (t.rot) ctx.rotate((t.rot * Math.PI) / 180)
+    // dezenter Schatten für Lesbarkeit auf beliebigem Grund
+    ctx.shadowColor = 'rgba(0,0,0,0.30)'
+    ctx.shadowBlur = size * 0.08
+    ctx.shadowOffsetY = Math.max(1, size * 0.03)
+    ctx.fillStyle = t.color
+    let y = -blockH / 2 + size * 0.82
+    for (const line of lines) {
+      ctx.fillText(line, 0, y)
+      y += lh
+    }
+    ctx.restore()
+    rects.push({
+      id: t.id,
+      nx: t.nx,
+      ny: t.ny,
+      nw: Math.min(1, (widest + size * 0.4) / W),
+      nh: (blockH + size * 0.3) / H,
+    })
+  }
+  return rects
 }
 
 // Sticker beim Import verkleinern, aber als PNG (Transparenz bleibt erhalten —

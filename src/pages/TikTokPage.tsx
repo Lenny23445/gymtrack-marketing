@@ -1,18 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 import { CATEGORY_META } from '../lib/types'
-import type { Category, PostTheme, SlideBg, Sticker, TikTokConcept, TikTokSlide, VAlign } from '../lib/types'
+import type { Category, PostTheme, SlideBg, Sticker, SlideText, TikTokConcept, TikTokSlide, VAlign } from '../lib/types'
 import { findIdea, randomIdea } from '../data/ideas'
 import { generateTikTok, tiktokAsText, TREND_LINKS } from '../data/tiktok'
-import { drawTikTokSlide, drawTikTokShot, drawStickers, downscalePng, downloadCanvas, canvasThumb, DEFAULT_ACCENT, stripRich } from '../lib/canvas'
-import type { TextRect } from '../lib/canvas'
+import { drawTikTokSlide, drawTikTokShot, drawStickers, drawSlideTexts, downscalePng, downloadCanvas, canvasThumb, DEFAULT_ACCENT, stripRich } from '../lib/canvas'
+import type { TextRect, TextElRect } from '../lib/canvas'
 import { upsertSaved, newPostId } from '../lib/savedPosts'
 import { loadImage, useShots } from '../lib/screenshots'
-import { useFontsReady, DEFAULT_STYLE } from '../lib/fonts'
-import type { TextStyle } from '../lib/fonts'
+import { useFontsReady, DEFAULT_STYLE, FONTS } from '../lib/fonts'
+import type { TextStyle, FontKey } from '../lib/fonts'
 import type { EditRequest } from '../App'
 import { CopyButton, Seg } from '../components/ui'
 import { ScreenshotPicker } from '../components/ScreenshotPicker'
-import { StickerLayer, TextHandle } from '../components/StickerLayer'
+import { StickerLayer, SlideTextLayer, TextHandle, PhoneHandle } from '../components/StickerLayer'
+import { TikTokFrame } from '../components/TikTokFrame'
 import { DesignPanel } from '../components/DesignPanel'
 import { RichTextEditor } from '../components/RichTextEditor'
 
@@ -74,6 +75,12 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
   const [imgCache, setImgCache] = useState<Record<string, HTMLImageElement>>({})
   const [bgImgCache, setBgImgCache] = useState<Record<string, HTMLImageElement>>({})
   const [textRect, setTextRect] = useState<TextRect | null>(null)
+  // Geräte-Rechteck auf Screenshot-Slides (für den Verschiebe-/Skalier-Griff).
+  const [phoneRect, setPhoneRect] = useState<TextRect | null>(null)
+  // Rechtecke der freien Text-Elemente (Canvas liefert sie beim Zeichnen) → DOM-Griffe.
+  const [textElRects, setTextElRects] = useState<Record<string, TextElRect>>({})
+  // Transparenter TikTok-UI-Rahmen zur Orientierung (nur Vorschau, nie im Export).
+  const [showFrame, setShowFrame] = useState(true)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
 
@@ -104,20 +111,29 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shots])
 
-  const drawOne = (c: HTMLCanvasElement, s: TikTokSlide): TextRect | null => {
+  // Zeichnet einen Slide vollständig (Hintergrund + Haupttext + freie Text-Elemente)
+  // und liefert das Haupt-Text-Rechteck sowie die Rechtecke der freien Text-Elemente.
+  const drawOne = (c: HTMLCanvasElement, s: TikTokSlide): { textRect: TextRect | null; phoneRect: TextRect | null; texts: TextElRect[] } => {
     const im = s.shotId ? imgCache[s.shotId] : undefined
     const bgImg = s.bg?.type === 'image' ? bgImgCache[s.bg.dataUrl] : undefined
+    let mainRect: TextRect | null = null
+    let phoneRect: TextRect | null = null
     if (s.kind === 'shot' && im) {
-      drawTikTokShot(c, im, s.text, theme, accent, style, s.bg, bgImg)
-      return null
+      phoneRect = drawTikTokShot(c, im, s.text, theme, accent, style, s.bg, bgImg, s.shotLayout)
+    } else {
+      mainRect = drawTikTokSlide(c, s.text, theme, s.align ?? 'center', accent, style, s.bg, { tx: s.tx, ty: s.ty }, bgImg)
     }
-    return drawTikTokSlide(c, s.text, theme, s.align ?? 'center', accent, style, s.bg, { tx: s.tx, ty: s.ty }, bgImg)
+    const texts = drawSlideTexts(c, s.texts, style)
+    return { textRect: mainRect, phoneRect, texts }
   }
 
   useEffect(() => {
     const c = canvasRef.current
     if (!c || slides.length === 0) return
-    setTextRect(drawOne(c, slides[activeIdx]))
+    const r = drawOne(c, slides[activeIdx])
+    setTextRect(r.textRect)
+    setPhoneRect(r.phoneRect)
+    setTextElRects(Object.fromEntries(r.texts.map(t => [t.id, t])))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [concept, slideIdx, theme, imgCache, bgImgCache, accent, style, fontsReady])
 
@@ -194,6 +210,39 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
     }
     r.readAsDataURL(file)
   }
+
+  // ── Freie Text-Elemente ───────────────────────────────────────────────
+  const activeTexts = activeSlide?.texts ?? []
+  const setTexts = (texts: SlideText[]) => updSlide(activeIdx, { texts })
+  const updText = (id: string, patch: Partial<SlideText>) =>
+    setTexts(activeTexts.map(t => (t.id === id ? { ...t, ...patch } : t)))
+  const delText = (id: string) => setTexts(activeTexts.filter(t => t.id !== id))
+  const addTextEl = () => {
+    const el: SlideText = {
+      id: 'txt-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+      text: 'Text',
+      nx: 0.5,
+      // leicht versetzt stapeln, damit neue Felder nicht exakt übereinander liegen
+      ny: 0.5 + Math.min(0.3, activeTexts.length * 0.08),
+      nsize: 0.09,
+      color: theme === 'dark' ? '#FFFFFF' : '#0A0A0A',
+    }
+    setTexts([...activeTexts, el])
+  }
+
+  // ── Screenshot-Slide: Gerät verschieben/skalieren ─────────────────────
+  const shotScale = activeSlide?.shotLayout?.scale ?? 1
+  const moveShot = (nx: number, ny: number) =>
+    updSlide(activeIdx, { shotLayout: { nx, ny, scale: activeSlide?.shotLayout?.scale ?? 1 } })
+  const scaleShot = (scale: number) =>
+    updSlide(activeIdx, {
+      shotLayout: {
+        nx: activeSlide?.shotLayout?.nx ?? phoneRect?.nx ?? 0.5,
+        ny: activeSlide?.shotLayout?.ny ?? phoneRect?.ny ?? 0.62,
+        scale,
+      },
+    })
+  const resetShot = () => updSlide(activeIdx, { shotLayout: undefined })
 
   const setBg = (b: SlideBg) => updSlide(activeIdx, { bg: b })
   const moveText = (tx: number, ty: number) => updSlide(activeIdx, { tx, ty })
@@ -326,15 +375,59 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
               <h3>Vorschau · Slide {activeIdx + 1}/{slides.length}</h3>
               <div ref={stageRef} className="sticker-stage tt-stage">
                 <canvas ref={canvasRef} className="preview-canvas" />
+                {showFrame && <TikTokFrame />}
                 {guides && <span className={'tt-guide v' + (guides.v ? ' on' : '')} />}
                 {guides && <span className={'tt-guide h' + (guides.h ? ' on' : '')} />}
                 <StickerLayer
                   stickers={activeSlide?.stickers ?? []}
                   stageRef={stageRef}
                   onChange={st => updSlide(activeIdx, { stickers: st })}
+                  onGuides={setGuides}
+                />
+                <SlideTextLayer
+                  texts={activeTexts}
+                  rects={textElRects}
+                  stageRef={stageRef}
+                  onChange={setTexts}
+                  onEdit={id => {
+                    const el = document.getElementById('txt-edit-' + id) as HTMLTextAreaElement | null
+                    el?.focus()
+                    el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+                  }}
+                  onGuides={setGuides}
                 />
                 {textRect && activeSlide?.kind !== 'shot' && (
                   <TextHandle rect={textRect} stageRef={stageRef} onMove={moveText} onGuides={setGuides} />
+                )}
+                {phoneRect && activeSlide?.kind === 'shot' && (
+                  <PhoneHandle
+                    rect={phoneRect}
+                    scale={shotScale}
+                    stageRef={stageRef}
+                    onMove={moveShot}
+                    onScale={scaleShot}
+                    onGuides={setGuides}
+                  />
+                )}
+              </div>
+              <div className="row" style={{ marginTop: 10, gap: 8, flexWrap: 'wrap' }}>
+                <button className="btn btn-sm" onClick={addTextEl} title="Freies Textfeld auf diesem Slide hinzufügen">＋ Textfeld</button>
+                <button
+                  className={'btn btn-sm' + (showFrame ? ' btn-primary' : '')}
+                  onClick={() => setShowFrame(f => !f)}
+                  title="Transparenten TikTok-Rahmen zur Orientierung ein-/ausblenden"
+                >
+                  {showFrame ? '✓ TikTok-Rahmen' : 'TikTok-Rahmen'}
+                </button>
+                {activeSlide?.kind === 'shot' && (
+                  <button
+                    className="btn btn-sm"
+                    disabled={!activeSlide?.shotLayout}
+                    onClick={resetShot}
+                    title="Screenshot wieder automatisch anordnen"
+                  >
+                    ⌖ Screenshot zurück
+                  </button>
                 )}
               </div>
               {slides.length > 1 && (
@@ -444,6 +537,55 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
                 onImportSticker={importSticker}
                 stickerCount={activeSlide?.stickers?.length ?? 0}
               />
+            </div>
+
+            <div className="card">
+              <div className="row" style={{ justifyContent: 'space-between' }}>
+                <h3 style={{ margin: 0 }}>Freie Textfelder ({activeTexts.length})</h3>
+                <button className="btn btn-sm btn-primary" onClick={addTextEl}>＋ Hinzufügen</button>
+              </div>
+              {activeTexts.length === 0 ? (
+                <p className="hint" style={{ marginTop: 8 }}>
+                  Zusätzliche Textfelder frei auf dem Slide platzieren. „Hinzufügen" klicken, dann in der Vorschau ziehen,
+                  an der Ecke skalieren, am grünen Griff drehen.
+                </p>
+              ) : (
+                <div className="txt-el-list">
+                  {activeTexts.map((t, i) => (
+                    <div className="txt-el-row" key={t.id}>
+                      <div className="row" style={{ justifyContent: 'space-between', marginBottom: 6 }}>
+                        <span className="hint">Textfeld {i + 1}</span>
+                        <button className="btn btn-sm" onClick={() => delText(t.id)}>Löschen</button>
+                      </div>
+                      <textarea
+                        id={'txt-edit-' + t.id}
+                        value={t.text}
+                        rows={2}
+                        onChange={e => updText(t.id, { text: e.target.value })}
+                        placeholder="Text …"
+                      />
+                      <div className="row" style={{ gap: 8, marginTop: 8, alignItems: 'center' }}>
+                        <input
+                          type="color"
+                          value={t.color}
+                          onChange={e => updText(t.id, { color: e.target.value })}
+                          title="Farbe"
+                          style={{ width: 36, height: 30, padding: 0, border: 'none', background: 'none' }}
+                        />
+                        <select
+                          value={t.font ?? 'sans'}
+                          onChange={e => updText(t.id, { font: e.target.value as FontKey })}
+                          title="Schriftart"
+                        >
+                          {FONTS.map(f => (
+                            <option key={f.key} value={f.key}>{f.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="card">

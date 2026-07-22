@@ -1,3 +1,5 @@
+import type { FontKey } from './fonts'
+
 export type Category =
   | 'education'
   | 'problem'
@@ -68,6 +70,20 @@ export interface Sticker {
   rot?: number // Drehung in Grad (im/gegen den Uhrzeigersinn), 0 = keine
 }
 
+// Frei platzierbares Text-Element auf einem Slide (unabhängig vom Slide-Haupttext).
+// Beliebig oft, frei verschiebbar/skalierbar/drehbar — wie ein Sticker, nur Text.
+export interface SlideText {
+  id: string
+  text: string
+  nx: number // Mittelpunkt X, Anteil der Breite
+  ny: number // Mittelpunkt Y, Anteil der Höhe
+  nsize: number // Schriftgröße als Anteil der Canvas-Breite (z. B. 0.08)
+  color: string
+  font?: FontKey // eigene Schrift, sonst Slide-Standard
+  rot?: number // Drehung in Grad
+  align?: 'left' | 'center' | 'right'
+}
+
 // Hintergrund eines Slides: Theme-Standard, Vollton, Farbverlauf oder eigenes Bild.
 export type SlideBg =
   | { type: 'theme' }
@@ -83,8 +99,12 @@ export interface TikTokSlide {
   align?: VAlign
   // Screenshot-Slides: eigenes Bild pro Slide (ID aus der Screenshot-Bibliothek)
   shotId?: string
+  // Screenshot-Slides: Gerät frei verschieben/skalieren (Anteile 0..1), sonst Auto-Layout
+  shotLayout?: { nx: number; ny: number; scale: number }
   // Frei platzierte Sticker auf diesem Slide
   stickers?: Sticker[]
+  // Frei platzierte, zusätzliche Text-Elemente (unabhängig vom Haupttext)
+  texts?: SlideText[]
   // Hintergrund (sonst Theme dark/light)
   bg?: SlideBg
   // Text-Mittelpunkt frei verschoben (Anteil 0..1); sonst zentriert per align

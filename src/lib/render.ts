@@ -7,6 +7,7 @@ import {
   drawTikTokShot,
   drawTikTokSlide,
   drawStickers,
+  drawSlideTexts,
   downloadCanvas,
   canvasThumb,
 } from './canvas'
@@ -75,8 +76,9 @@ async function renderTikTok(d: TiktokPayload): Promise<HTMLCanvasElement[]> {
         bgImg = null
       }
     }
-    if (s.kind === 'shot' && img) drawTikTokShot(c, img, s.text, d.theme, d.accent, d.style, s.bg, bgImg)
+    if (s.kind === 'shot' && img) drawTikTokShot(c, img, s.text, d.theme, d.accent, d.style, s.bg, bgImg, s.shotLayout)
     else drawTikTokSlide(c, s.text, d.theme, s.align ?? 'center', d.accent, d.style, s.bg, { tx: s.tx, ty: s.ty }, bgImg)
+    drawSlideTexts(c, s.texts, d.style)
     await drawStickers(c, s.stickers)
     out.push(c)
   }
@@ -87,7 +89,7 @@ async function renderMockup(d: MockupPayload): Promise<HTMLCanvasElement[]> {
   const c = document.createElement('canvas')
   const img = await loadShotImage(d.shotId)
   if (img) {
-    drawMockup(c, { img, headline: d.headline, sub: d.sub, theme: d.theme, accent: d.accent, style: d.style })
+    drawMockup(c, { img, headline: d.headline, sub: d.sub, theme: d.theme, accent: d.accent, style: d.style, layout: d.layout })
   } else {
     drawPost(c, { kickerText: 'MY GYM TRACK', headline: d.headline, sub: d.sub, theme: d.theme, w: 1080, h: 1350, accent: d.accent, style: d.style })
   }

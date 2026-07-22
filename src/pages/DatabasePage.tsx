@@ -18,7 +18,7 @@ export default function DatabasePage({
 }) {
   const [q, setQ] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
-  const { saved, remove } = useSaved()
+  const { saved, remove, synced: postsSynced } = useSaved()
   const { shots, synced } = useShots()
 
   const list = useMemo(() => {
@@ -56,7 +56,15 @@ export default function DatabasePage({
 
         {/* ── Gespeicherte Posts ────────────────────────────────── */}
         <div className="card">
-          <h3>Meine Posts ({saved.length})</h3>
+          <h3>Geteilte Posts ({saved.length})</h3>
+          <div className="row" style={{ gap: 8, marginBottom: 12 }}>
+            <span className={'sync-dot' + (postsSynced ? ' on' : '')} />
+            <span className="hint">
+              {postsSynced
+                ? 'Synchronisiert — gespeicherte Posts landen im geteilten Ordner. Was deine Freundin speichert, erscheint hier automatisch und du kannst es weiterbearbeiten.'
+                : 'Nur auf diesem Gerät — Cloud verbindet sich… (offline oder noch nicht freigeschaltet). Posts bleiben lokal nutzbar.'}
+            </span>
+          </div>
           {saved.length === 0 ? (
             <div className="empty">
               Noch nichts gespeichert. Erstelle einen Post in „Instagram Post", „TikTok Slides" oder „Mockup-Studio" und

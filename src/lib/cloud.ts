@@ -12,6 +12,7 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore'
 import type { Shot } from './screenshots'
+import type { SavedPost } from './savedPosts'
 
 // Geteilte, synchronisierte Screenshot-Bibliothek über Firebase Firestore.
 // Bewusst dasselbe Firebase-Projekt wie die GymTrack-App (gymtrack-25d39) — dort
@@ -33,6 +34,8 @@ const FIREBASE_CONFIG = {
 
 // Eigene Collection, getrennt von den GymTrack-Nutzerdaten.
 const COLLECTION = 'mkt_screenshots'
+// Geteilte Content-Datenbank (gespeicherte, re-editierbare Posts).
+const POSTS_COLLECTION = 'mkt_posts'
 
 let app: FirebaseApp | null = null
 let db: Firestore | null = null
@@ -112,6 +115,59 @@ export function cloudSubscribe(
     snap => onShots(snap.docs.map(d => fromDoc(d.id, d.data() as Record<string, unknown>))),
     err => {
       console.warn('[cloud] Snapshot-Fehler — lokaler Modus:', err)
+      onError?.(err)
+    },
+  )
+}
+
+// ── Geteilte Content-Datenbank (gespeicherte Posts) ─────────────────────────
+// Der komplette Post wird als JSON-String abgelegt. Das umgeht Firestores
+// Einschränkungen (kein `undefined`, keine direkt verschachtelten Arrays), die
+// bei den tief verschachtelten Post-Payloads (Slides → Sticker/Text-Arrays) sonst
+// zuschlagen. `updatedAt` bleibt als eigenes Feld für einfache Sortierung/Merges.
+
+function postFromDoc(data: Record<string, unknown>): SavedPost | null {
+  try {
+    if (typeof data.json !== 'string') return null
+    const p = JSON.parse(data.json) as SavedPost
+    if (p && typeof p.id === 'string' && p.payload) return p
+  } catch {
+    /* defektes Dokument überspringen */
+  }
+  return null
+}
+
+// Einen Post in die geteilte Cloud schreiben (Doc-ID = Post-ID → idempotent).
+export async function cloudPutPost(post: SavedPost): Promise<void> {
+  if (!db) return
+  await setDoc(doc(db, POSTS_COLLECTION, post.id), {
+    json: JSON.stringify(post),
+    updatedAt: post.updatedAt,
+  })
+}
+
+export async function cloudDeletePost(id: string): Promise<void> {
+  if (!db) return
+  await deleteDoc(doc(db, POSTS_COLLECTION, id))
+}
+
+export async function cloudListPosts(): Promise<SavedPost[]> {
+  if (!db) return []
+  const snap = await getDocs(collection(db, POSTS_COLLECTION))
+  return snap.docs.map(d => postFromDoc(d.data() as Record<string, unknown>)).filter((p): p is SavedPost => !!p)
+}
+
+// Live-Abo der geteilten Post-Datenbank. Null, wenn die Cloud nicht verfügbar ist.
+export function cloudSubscribePosts(
+  onPosts: (posts: SavedPost[]) => void,
+  onError?: (e: unknown) => void,
+): Unsubscribe | null {
+  if (!db) return null
+  return onSnapshot(
+    collection(db, POSTS_COLLECTION),
+    snap => onPosts(snap.docs.map(d => postFromDoc(d.data() as Record<string, unknown>)).filter((p): p is SavedPost => !!p)),
+    err => {
+      console.warn('[cloud] Post-Snapshot-Fehler — lokaler Modus:', err)
       onError?.(err)
     },
   )

@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PostTheme } from '../lib/types'
 import { drawMockup, downloadCanvas, canvasThumb, DEFAULT_ACCENT, stripRich } from '../lib/canvas'
+import type { TextRect, MockupLayout } from '../lib/canvas'
+import { TextHandle, PhoneHandle } from '../components/StickerLayer'
+import type { Guides } from '../components/StickerLayer'
 import { drawVideoFrame, recordVideoMockup, downloadBlob } from '../lib/videoMockup'
 import { generateHashtags } from '../data/hashtags'
 import { CTAS } from '../data/ideas'
@@ -62,8 +65,14 @@ export default function MockupPage({ edit }: { edit: EditRequest | null }) {
   const [style, setStyle] = useState<TextStyle>(DEFAULT_STYLE)
   const fontsReady = useFontsReady()
   const [saved, setSaved] = useState(false)
+  // Freie Anordnung von Textblock + Gerät (leer = Auto-Layout wie bisher).
+  const [layout, setLayout] = useState<MockupLayout>({})
+  const [rects, setRects] = useState<{ text: TextRect; phone: TextRect } | null>(null)
+  const [guides, setGuides] = useState<Guides>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const stageRef = useRef<HTMLDivElement>(null)
   const rafRef = useRef(0)
+  const phoneScale = layout.phone?.scale ?? 1
 
   const applyType = (id: string, idx: number) => {
     const t = TYPES.find(x => x.id === id)!
@@ -77,8 +86,9 @@ export default function MockupPage({ edit }: { edit: EditRequest | null }) {
   // Bild-Vorschau
   useEffect(() => {
     if (mode !== 'image' || !img || !canvasRef.current) return
-    drawMockup(canvasRef.current, { img, headline, sub, theme, accent, style })
-  }, [mode, img, headline, sub, theme, accent, style, fontsReady])
+    const r = drawMockup(canvasRef.current, { img, headline, sub, theme, accent, style, layout })
+    setRects(r)
+  }, [mode, img, headline, sub, theme, accent, style, layout, fontsReady])
 
   // Gespeichertes Mockup aus der Datenbank zum Nachbearbeiten laden (nur Bild).
   useEffect(() => {
@@ -91,6 +101,7 @@ export default function MockupPage({ edit }: { edit: EditRequest | null }) {
     setTheme(d.theme)
     setAccent(d.accent)
     setStyle(d.style ?? DEFAULT_STYLE)
+    setLayout(d.layout ?? {})
     setEditId(edit.saved.id)
     setEditCreatedAt(edit.saved.createdAt)
     setSaved(false)
@@ -161,12 +172,26 @@ export default function MockupPage({ edit }: { edit: EditRequest | null }) {
       thumb: canvasRef.current ? canvasThumb(canvasRef.current) : undefined,
       createdAt: editCreatedAt ?? now,
       updatedAt: now,
-      payload: { kind: 'mockup', data: { headline, sub, theme, accent, typeId, shotId: pickId, style } },
+      payload: { kind: 'mockup', data: { headline, sub, theme, accent, typeId, shotId: pickId, style, layout } },
     })
     setEditId(id)
     setEditCreatedAt(editCreatedAt ?? now)
     setSaved(true)
   }
+
+  // Textblock verschieben
+  const moveText = (nx: number, ny: number) => setLayout(l => ({ ...l, text: { nx, ny } }))
+  // Gerät verschieben (Skalierung behalten)
+  const movePhone = (nx: number, ny: number) =>
+    setLayout(l => ({ ...l, phone: { nx, ny, scale: l.phone?.scale ?? 1 } }))
+  // Gerät skalieren (Position behalten; ohne bisherige Position aus dem Auto-Rechteck)
+  const scalePhone = (scale: number) =>
+    setLayout(l => ({
+      ...l,
+      phone: { nx: l.phone?.nx ?? rects?.phone.nx ?? 0.5, ny: l.phone?.ny ?? rects?.phone.ny ?? 0.7, scale },
+    }))
+  const layoutTouched = !!layout.text || !!layout.phone
+  const resetLayout = () => setLayout({})
 
   const cta = CTAS[0]
   const caption = `${stripRich(headline)}\n\n${stripRich(sub)}\n\n${cta}\n\n${hashtagBlock(generateHashtags('feature'))}`
@@ -190,8 +215,32 @@ export default function MockupPage({ edit }: { edit: EditRequest | null }) {
         <div className="split">
           <div className="card">
             <h3>Vorschau · 1080 × {mode === 'video' && vidFormat === 'reel' ? 1920 : 1350}</h3>
-            {(mode === 'image' ? img : video) ? (
-              <canvas ref={canvasRef} className="preview-canvas" style={mode === 'video' && vidFormat === 'reel' ? { maxWidth: 300, margin: '0 auto' } : undefined} />
+            {mode === 'image' && img ? (
+              <>
+                <div ref={stageRef} className="sticker-stage" style={{ maxWidth: 380, margin: '0 auto' }}>
+                  <canvas ref={canvasRef} className="preview-canvas" />
+                  {guides && <span className={'tt-guide v' + (guides.v ? ' on' : '')} />}
+                  {guides && <span className={'tt-guide h' + (guides.h ? ' on' : '')} />}
+                  {rects && (
+                    <PhoneHandle
+                      rect={rects.phone}
+                      scale={phoneScale}
+                      stageRef={stageRef}
+                      onMove={movePhone}
+                      onScale={scalePhone}
+                      onGuides={setGuides}
+                    />
+                  )}
+                  {rects && (
+                    <TextHandle rect={rects.text} stageRef={stageRef} onMove={moveText} onGuides={setGuides} />
+                  )}
+                </div>
+                <p className="hint" style={{ marginTop: 10, textAlign: 'center' }}>
+                  Text am „Text"-Griff ziehen · Handy am „Handy"-Griff ziehen, an der Ecke kleiner/größer.
+                </p>
+              </>
+            ) : mode === 'video' && video ? (
+              <canvas ref={canvasRef} className="preview-canvas" style={vidFormat === 'reel' ? { maxWidth: 300, margin: '0 auto' } : undefined} />
             ) : (
               <div className="empty" style={{ border: '1px dashed var(--border)', borderRadius: 12 }}>
                 {mode === 'image' ? 'Noch kein Screenshot gewählt. Rechts aus der Bibliothek wählen oder neuen hochladen.' : 'Noch kein Video. Rechts ein Screen-Recording hochladen (.mp4/.mov).'}
@@ -202,6 +251,9 @@ export default function MockupPage({ edit }: { edit: EditRequest | null }) {
                 <button className="btn btn-primary btn-sm" onClick={() => canvasRef.current && downloadCanvas(canvasRef.current, `mockup-${typeId}`)}>PNG herunterladen</button>
                 <button className="btn btn-sm" onClick={saveToDb}>
                   {saved ? (editId ? '✓ Aktualisiert' : '✓ Gespeichert') : editId ? 'Änderungen speichern' : 'In Datenbank speichern'}
+                </button>
+                <button className="btn btn-sm" disabled={!layoutTouched} onClick={resetLayout} title="Text & Handy wieder automatisch anordnen">
+                  ⌖ Anordnung zurück
                 </button>
               </div>
             )}
