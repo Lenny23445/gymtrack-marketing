@@ -13,7 +13,6 @@ import type { EditRequest } from '../App'
 import { CopyButton, Seg } from '../components/ui'
 import { ScreenshotPicker } from '../components/ScreenshotPicker'
 import { StickerLayer, SlideTextLayer, TextHandle, PhoneHandle } from '../components/StickerLayer'
-import { TikTokFrame } from '../components/TikTokFrame'
 import { DesignPanel } from '../components/DesignPanel'
 import { RichTextEditor } from '../components/RichTextEditor'
 
@@ -79,8 +78,6 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
   const [phoneRect, setPhoneRect] = useState<TextRect | null>(null)
   // Rechtecke der freien Text-Elemente (Canvas liefert sie beim Zeichnen) → DOM-Griffe.
   const [textElRects, setTextElRects] = useState<Record<string, TextElRect>>({})
-  // Transparenter TikTok-UI-Rahmen zur Orientierung (nur Vorschau, nie im Export).
-  const [showFrame, setShowFrame] = useState(true)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
 
@@ -375,7 +372,6 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
               <h3>Vorschau · Slide {activeIdx + 1}/{slides.length}</h3>
               <div ref={stageRef} className="sticker-stage tt-stage">
                 <canvas ref={canvasRef} className="preview-canvas" />
-                {showFrame && <TikTokFrame />}
                 {guides && <span className={'tt-guide v' + (guides.v ? ' on' : '')} />}
                 {guides && <span className={'tt-guide h' + (guides.h ? ' on' : '')} />}
                 <StickerLayer
@@ -412,13 +408,6 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
               </div>
               <div className="row" style={{ marginTop: 10, gap: 8, flexWrap: 'wrap' }}>
                 <button className="btn btn-sm" onClick={addTextEl} title="Freies Textfeld auf diesem Slide hinzufügen">＋ Textfeld</button>
-                <button
-                  className={'btn btn-sm' + (showFrame ? ' btn-primary' : '')}
-                  onClick={() => setShowFrame(f => !f)}
-                  title="Transparenten TikTok-Rahmen zur Orientierung ein-/ausblenden"
-                >
-                  {showFrame ? '✓ TikTok-Rahmen' : 'TikTok-Rahmen'}
-                </button>
                 {activeSlide?.kind === 'shot' && (
                   <button
                     className="btn btn-sm"

@@ -868,29 +868,6 @@ table.plain td {
   resize: vertical;
 }
 
-/* ---------- Transparenter TikTok-UI-Rahmen (Orientierung, nie im Export) ---------- */
-/* Original-Template als transparentes PNG, halbtransparent über die Bühne gelegt. */
-
-.ttf {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 4;
-  opacity: 0.85;
-  overflow: hidden;
-  border-radius: inherit;
-}
-
-.ttf-img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  /* Volle Breite (9:16); Hoehendifferenz wurde im PNG aus dem LEEREN Bereich
-     zwischen Top-Leiste und Aktionsleiste entfernt — Elemente bleiben unverzerrt */
-  object-fit: fill;
-  user-select: none;
-}
-
 /* ---------- Cloud-Sync-Status ---------- */
 
 .sync-dot {
