@@ -921,13 +921,28 @@ table.plain td {
 
 .ttf-search em {
   font-style: normal;
-  font-size: 4cqw;
+  font-size: 3.8cqw;
   opacity: 0.8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ttf-search-btn {
   font-size: 4.2cqw;
   font-weight: 600;
+}
+
+/* Seiten-Badge oben rechts */
+.ttf-page {
+  position: absolute;
+  top: 8.5%;
+  right: 4%;
+  font-size: 3.4cqw;
+  font-weight: 600;
+  padding: 0.8cqw 2.4cqw;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.4);
 }
 
 /* Linke schwebende Story-Blase */
@@ -997,23 +1012,53 @@ table.plain td {
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
 }
 
-.ttf-heart {
-  display: block;
-  color: #fe2c55;
-}
-
 .ttf-act b {
   font-size: 3.3cqw;
   font-weight: 600;
 }
 
-.ttf-disc {
-  width: 11cqw;
-  height: 11cqw;
-  border-radius: 50%;
-  background: radial-gradient(circle, #555 28%, #1a1a1a 30%, #000 62%);
-  border: 3px solid rgba(30, 30, 30, 0.9);
+.ttf-more {
   margin-top: 1cqw;
+}
+
+.ttf-more svg {
+  width: 7cqw;
+  height: 7cqw;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
+}
+
+/* Karussell-Punkte (mittig, über der Caption) */
+.ttf-carousel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 21%;
+  display: flex;
+  justify-content: center;
+  gap: 1.6cqw;
+}
+
+.ttf-carousel i {
+  width: 1.7cqw;
+  height: 1.7cqw;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.ttf-carousel i.on {
+  background: #fff;
+}
+
+/* Kleines Profilbild rechts unten */
+.ttf-avatar-sm {
+  position: absolute;
+  right: 4%;
+  bottom: 4.5%;
+  width: 10cqw;
+  height: 10cqw;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
+  background: linear-gradient(135deg, #7a6a60, #cbb8ad 55%, #6b6b78);
 }
 
 /* Unten: Name + Foto-Chip + Zeit, Hashtags, Sound */
@@ -1035,7 +1080,12 @@ table.plain td {
 }
 
 .ttf-userline b {
-  font-size: 5cqw;
+  font-size: 4.6cqw;
+  font-weight: 700;
+}
+
+.ttf-cap {
+  font-size: 3.9cqw;
   font-weight: 700;
 }
 
