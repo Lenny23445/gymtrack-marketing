@@ -885,7 +885,9 @@ table.plain td {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: fill;
+  /* Ganzes Template unverzerrt einpassen — exakt die Proportionen der Vorlage */
+  object-fit: contain;
+  object-position: center;
   user-select: none;
 }
 
