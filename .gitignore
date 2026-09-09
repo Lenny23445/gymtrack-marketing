@@ -5,4 +5,5 @@ dist
 .vite
 
 # lokale Dev-Server-Konfiguration
-.claude/
+.claude/*
+!.claude/progress.md
