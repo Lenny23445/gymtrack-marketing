@@ -266,14 +266,19 @@ export function richFit(
   maxLines: number,
   weight: number,
 ): { size: number; lines: RichTok[][] } {
-  const toks = tokenizeRich(raw)
+  // Manuelle \n-Umbrueche bleiben eigene Zeilen (Markup spannt nie ueber Zeilen, siehe
+  // RichTextEditor); nur innerhalb einer Zeile wird automatisch umgebrochen. Leere Zeile
+  // = Abstandszeile. Explizite Zeilen werden nie durch maxLines abgeschnitten.
+  const paras = raw.split('\n').map(p => tokenizeRich(p))
+  const limit = Math.max(maxLines, paras.length)
+  const wrapAll = () => paras.flatMap(t => (t.length ? richWrap(ctx, t, maxWidth) : [[]]))
   for (let size = base; size >= min; size -= 4) {
     ctx.font = mainFont(weight, size)
-    const lines = richWrap(ctx, toks, maxWidth)
-    if (lines.length <= maxLines) return { size, lines }
+    const lines = wrapAll()
+    if (lines.length <= limit) return { size, lines }
   }
   ctx.font = mainFont(weight, min)
-  return { size: min, lines: richWrap(ctx, toks, maxWidth).slice(0, maxLines) }
+  return { size: min, lines: wrapAll().slice(0, limit) }
 }
 
 // Zeichnet eine Zeile mit Highlight-Segmenten und dem aktiven Effekt. Font vorher setzen.
