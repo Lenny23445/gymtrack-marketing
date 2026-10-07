@@ -222,14 +222,14 @@ export async function cloudDeletePool(id: string): Promise<void> {
   await deleteDoc(doc(db, POSTS_COLLECTION, id))
 }
 
-export async function cloudPutAccounts(names: string[]): Promise<void> {
+export async function cloudPutAccounts(names: string[], formats: Record<string, string>): Promise<void> {
   if (!db) return
-  await setDoc(doc(db, POSTS_COLLECTION, ACCOUNTS_DOC), { poolKind: 'accounts', names })
+  await setDoc(doc(db, POSTS_COLLECTION, ACCOUNTS_DOC), { poolKind: 'accounts', names, formats })
 }
 
 // Live-Abo: Konten + alle Pool-Bilder. Null ohne Cloud.
 export function cloudSubscribePool(
-  onData: (accounts: string[] | null, imgs: PoolDoc[]) => void,
+  onData: (accounts: string[] | null, imgs: PoolDoc[], formats: Record<string, string> | null) => void,
   onError?: (e: unknown) => void,
 ): Unsubscribe | null {
   if (!db) return null
@@ -237,17 +237,19 @@ export function cloudSubscribePool(
     query(collection(db, POSTS_COLLECTION), where('poolKind', 'in', ['img', 'accounts'])),
     snap => {
       let accounts: string[] | null = null
+      let formats: Record<string, string> | null = null
       const imgs: PoolDoc[] = []
       for (const d of snap.docs) {
         const data = d.data() as Record<string, unknown>
         if (d.id === ACCOUNTS_DOC) {
           if (Array.isArray(data.names)) accounts = data.names.filter((n): n is string => typeof n === 'string')
+          if (data.formats && typeof data.formats === 'object') formats = data.formats as Record<string, string>
           continue
         }
         const p = poolFromDoc(d.id, data)
         if (p) imgs.push(p)
       }
-      onData(accounts, imgs)
+      onData(accounts, imgs, formats)
     },
     err => {
       console.warn('[cloud] Pool-Snapshot-Fehler — lokaler Modus:', err)

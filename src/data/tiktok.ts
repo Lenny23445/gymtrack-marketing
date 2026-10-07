@@ -421,13 +421,14 @@ export const TREND_LINKS: { label: string; url: string; desc: string }[] = [
   },
 ]
 
-export function generateTikTok(idea: Idea): TikTokConcept {
+// slideCount: 1 = nur Hook, 2 = Hook + Payoff, sonst zufällig (~60 % zweislidig)
+export function generateTikTok(idea: Idea, slideCount?: 1 | 2): TikTokConcept {
   // Basis-Pools + die +100-Erweiterung pro Kategorie zusammenlegen.
   const hookPool = HOOKS[idea.cat].concat(HOOKS_EXTRA[idea.cat])
   const payoffPool = PAYOFFS[idea.cat].concat(PAYOFFS_EXTRA[idea.cat])
   const hook = rand(hookPool)(idea)
   // ~60 % zweislidig (Hook + Payoff), ~40 % einslidig (Hook + Sound tragen allein)
-  const twoSlides = Math.random() < 0.6
+  const twoSlides = slideCount ? slideCount === 2 : Math.random() < 0.6
   const slides: TikTokSlide[] = [{ text: hook, note: 'Hook — stoppt den Scroll. Großer, zentrierter Text.' }]
   if (twoSlides) {
     slides.push({ text: rand(payoffPool), note: 'Payoff — Auflösung + weicher CTA. Erst nach dem Hook zeigen.' })

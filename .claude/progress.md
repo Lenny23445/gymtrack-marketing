@@ -1,6 +1,4 @@
-# TikTok: eigener Bilder-Pool pro Konto
-- [x] Code verstehen (Bilder, Slides, Export)
-- [x] Konten + Pool-Zuordnung (Cloud + lokal)
-- [x] Ähnlichkeits-Hash, Doppel-Sperre zwischen Konten
-- [x] UI: Konto-Auswahl, Auto-Befüllung, Export-Prüfung
-- [x] Build, Browser-Test, Push
+# TikTok: Slide-Format pro Konto
+- [x] Generator + Konto-Einstellung (1 Slide / mehrere / gemischt)
+- [x] Automatik im Editor (Konzept passt sich Konto an)
+- [x] Build, Test, Push

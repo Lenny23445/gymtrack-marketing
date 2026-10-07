@@ -18,6 +18,10 @@ import { compressDataUrl, putBgFull } from './screenshots'
 
 export type PoolImg = PoolDoc
 
+// Slide-Format je Konto: nur Einzel-Slides, nur mehrere Slides (Hook + Auflösung) oder gemischt.
+export type SlideFormat = 'single' | 'multi' | 'mixed'
+const FMT_KEY = 'tt-pool-formats'
+
 // Ab diesem Bit-Abstand (von 64) gilt ein Bild als „dasselbe Motiv".
 const SIMILAR_BITS = 10
 
@@ -160,6 +164,22 @@ function writeAccounts(names: string[]) {
   }
 }
 
+function readFormats(): Record<string, SlideFormat> {
+  try {
+    const f = JSON.parse(localStorage.getItem(FMT_KEY) ?? '{}')
+    return f && typeof f === 'object' ? f : {}
+  } catch {
+    return {}
+  }
+}
+function writeFormats(f: Record<string, SlideFormat>) {
+  try {
+    localStorage.setItem(FMT_KEY, JSON.stringify(f))
+  } catch {
+    /* egal */
+  }
+}
+
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const r = new FileReader()
@@ -194,6 +214,7 @@ export function usePool() {
   const [accounts, setAccounts] = useState<string[]>(() => readAccounts())
   const [imgs, setImgs] = useState<PoolImg[]>([])
   const [synced, setSynced] = useState(false)
+  const [formats, setFormats] = useState<Record<string, SlideFormat>>(() => readFormats())
 
   useEffect(() => {
     let alive = true
@@ -203,13 +224,17 @@ export function usePool() {
       if (alive) setImgs(local)
       if (!(await cloudReady()) || !alive) return
       unsub =
-        cloudSubscribePool(async (acc, cloud) => {
+        cloudSubscribePool(async (acc, cloud, fmts) => {
           await localReplace(cloud)
           if (!alive) return
           setImgs(cloud)
           if (acc) {
             setAccounts(acc)
             writeAccounts(acc)
+          }
+          if (fmts) {
+            setFormats(fmts as Record<string, SlideFormat>)
+            writeFormats(fmts as Record<string, SlideFormat>)
           }
           setSynced(true)
         }) ?? null
@@ -220,33 +245,41 @@ export function usePool() {
     }
   }, [])
 
-  const saveAccounts = useCallback(async (names: string[]) => {
+  const saveAccounts = useCallback(async (names: string[], fmts: Record<string, SlideFormat>) => {
     setAccounts(names)
     writeAccounts(names)
+    setFormats(fmts)
+    writeFormats(fmts)
     try {
-      await cloudPutAccounts(names)
+      await cloudPutAccounts(names, fmts)
     } catch {
       /* lokal gespeichert */
     }
   }, [])
 
+  const setFormat = useCallback(
+    (name: string, f: SlideFormat) => saveAccounts(accounts, { ...formats, [name]: f }),
+    [accounts, formats, saveAccounts],
+  )
+
   const addAccount = useCallback(
     (name: string) => {
       const n = name.trim().replace(/^@/, '')
       if (!n || accounts.includes(n)) return
-      saveAccounts([...accounts, n])
+      saveAccounts([...accounts, n], formats)
     },
-    [accounts, saveAccounts],
+    [accounts, formats, saveAccounts],
   )
 
   // Konto nur löschen, wenn sein Pool leer ist — sonst verwaisen Bilder.
   const removeAccount = useCallback(
     (name: string) => {
       if (imgs.some(i => i.account === name)) return false
-      saveAccounts(accounts.filter(a => a !== name))
+      const { [name]: _drop, ...rest } = formats
+      saveAccounts(accounts.filter(a => a !== name), rest)
       return true
     },
-    [accounts, imgs, saveAccounts],
+    [accounts, formats, imgs, saveAccounts],
   )
 
   const addImages = useCallback(
@@ -329,7 +362,7 @@ export function usePool() {
     }
   }, [])
 
-  return { accounts, imgs, synced, addAccount, removeAccount, addImages, removeImg, markUsed }
+  return { accounts, imgs, synced, formats, setFormat, addAccount, removeAccount, addImages, removeImg, markUsed }
 }
 
 // Bild für eine Slide-Position wählen: erst Bilder dieser Position, sonst andere

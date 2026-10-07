@@ -8,7 +8,7 @@ import type { TextRect, TextElRect } from '../lib/canvas'
 import { upsertSaved, newPostId } from '../lib/savedPosts'
 import { loadBgFull, loadImage, useShots } from '../lib/screenshots'
 import { usePool, pickPoolImg } from '../lib/pool'
-import type { PoolImg, AddResult } from '../lib/pool'
+import type { PoolImg, AddResult, SlideFormat } from '../lib/pool'
 import { useFontsReady, DEFAULT_STYLE, FONTS } from '../lib/fonts'
 import type { TextStyle, FontKey } from '../lib/fonts'
 import type { EditRequest } from '../App'
@@ -31,6 +31,11 @@ const DRAFT_KEY = 'tt-draft-v1'
 // Zuletzt gewähltes TikTok-Konto (pro Gerät).
 const ACCOUNT_KEY = 'tt-account'
 const POOL_SLOTS = [1, 2, 3, 4]
+const FORMATS: { value: SlideFormat; label: string }[] = [
+  { value: 'single', label: '1 Slide' },
+  { value: 'multi', label: 'Mehrere Slides' },
+  { value: 'mixed', label: 'Gemischt' },
+]
 
 const poolBg = (p: PoolImg): SlideBg => ({ type: 'image', dataUrl: p.preview, fullId: p.id, poolId: p.id })
 
@@ -116,6 +121,9 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
   const [poolMsg, setPoolMsg] = useState('')
   const [exportErr, setExportErr] = useState<string[]>([])
   const mine = pool.imgs.filter(p => p.account === account)
+  // Slide-Format des Kontos: neue Konzepte halten sich automatisch daran.
+  const format: SlideFormat = (account && pool.formats[account]) || 'mixed'
+  const fmtCount = format === 'single' ? 1 : format === 'multi' ? 2 : undefined
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
@@ -409,19 +417,28 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
     setEditCreatedAt(null)
   }
   const regen = (c: Category = cat) => {
-    setConcept(generateTikTok(randomIdea(c)))
+    setConcept(generateTikTok(randomIdea(c), fmtCount))
     setSlideIdx(0)
     setSaved(false)
     resetEdit()
     bumpEditor()
   }
   const variant = () => {
-    setConcept(generateTikTok(idea ?? randomIdea(cat)))
+    setConcept(generateTikTok(idea ?? randomIdea(cat), fmtCount))
     setSlideIdx(0)
     setSaved(false)
     resetEdit()
     bumpEditor()
   }
+
+  // Passt das aktuelle Konzept nicht zum Format des Kontos → automatisch neues ziehen.
+  // Gespeicherte Posts in Bearbeitung (editId) bleiben unangetastet.
+  useEffect(() => {
+    if (editId || !fmtCount) return
+    const ok = fmtCount === 1 ? slides.length === 1 : slides.length >= 2
+    if (!ok) regen()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account, format])
 
   const downloadAll = () => {
     const problems = exportProblems()
@@ -494,6 +511,12 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
               onKeyDown={e => e.key === 'Enter' && addAccount()}
             />
             <button className="btn btn-sm" disabled={!newAccount.trim()} onClick={addAccount}>＋ Konto</button>
+            {account && (
+              <>
+                <span className="hint">Format @{account}:</span>
+                <Seg options={FORMATS} value={format} onChange={(f: SlideFormat) => pool.setFormat(account, f)} />
+              </>
+            )}
           </div>
           <div className="row">
             <button className="btn" onClick={variant}>Text-Variante</button>
