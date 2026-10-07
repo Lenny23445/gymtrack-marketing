@@ -1512,3 +1512,54 @@ table.plain td {
   pointer-events: none;
   z-index: 4;
 }
+
+/* ---------- TikTok: Bilder-Pool pro Konto ---------- */
+
+.pool-acc-input {
+  width: 140px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  background: var(--bg);
+  color: inherit;
+}
+
+.pool-slot {
+  margin-top: 14px;
+}
+
+.pool-grid {
+  margin-top: 8px;
+}
+
+.shot-tile.used img {
+  opacity: 0.45;
+}
+
+.pool-used {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: rgba(10, 10, 10, 0.72);
+  color: #fff;
+  font-size: 10px;
+}
+
+.pool-msg {
+  margin-top: 10px;
+}
+
+.pool-err {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #ff453a;
+  font-size: 13px;
+}
+
+.pool-err ul {
+  margin: 6px 0 8px 18px;
+}

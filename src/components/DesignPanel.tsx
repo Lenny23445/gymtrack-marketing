@@ -46,6 +46,7 @@ export function DesignPanel({
   onBg,
   onImportSticker,
   stickerCount,
+  onBgFile,
 }: {
   style: TextStyle
   onStyle: (s: TextStyle) => void
@@ -55,6 +56,8 @@ export function DesignPanel({
   onBg: (b: SlideBg) => void
   onImportSticker: (file?: File) => void
   stickerCount: number
+  // Gesetzt (TikTok): eigenes Bild landet im Pool des aktiven Kontos statt lose am Slide
+  onBgFile?: (file: File) => void
 }) {
   // Lokaler Zustand des Verlauf-Bauklotzes; synchronisiert, wenn ein Gradient aktiv ist.
   const [grad, setGrad] = useState(DEF_GRAD)
@@ -70,6 +73,7 @@ export function DesignPanel({
 
   const onBgImage = (file?: File) => {
     if (!file || !file.type.startsWith('image/')) return
+    if (onBgFile) return onBgFile(file)
     const r = new FileReader()
     r.onload = async () => {
       const dataUrl = await compressDataUrl(r.result as string, 1290)

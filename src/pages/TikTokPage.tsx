@@ -7,6 +7,8 @@ import { drawTikTokSlide, drawTikTokShot, drawStickers, drawSlideTexts, downscal
 import type { TextRect, TextElRect } from '../lib/canvas'
 import { upsertSaved, newPostId } from '../lib/savedPosts'
 import { loadBgFull, loadImage, useShots } from '../lib/screenshots'
+import { usePool, pickPoolImg } from '../lib/pool'
+import type { PoolImg, AddResult } from '../lib/pool'
 import { useFontsReady, DEFAULT_STYLE, FONTS } from '../lib/fonts'
 import type { TextStyle, FontKey } from '../lib/fonts'
 import type { EditRequest } from '../App'
@@ -26,6 +28,20 @@ const ALIGNS: { value: VAlign; label: string }[] = [
 // Entwurf des aktuell bearbeiteten TikTok-Posts, damit ein Seiten-Reload den Fortschritt
 // (Slides, Text/Farben/Schriften, Design, aktiver Slide) nicht verwirft.
 const DRAFT_KEY = 'tt-draft-v1'
+// Zuletzt gewähltes TikTok-Konto (pro Gerät).
+const ACCOUNT_KEY = 'tt-account'
+const POOL_SLOTS = [1, 2, 3, 4]
+
+const poolBg = (p: PoolImg): SlideBg => ({ type: 'image', dataUrl: p.preview, fullId: p.id, poolId: p.id })
+
+function poolMessage(r: AddResult, account: string): string {
+  const parts: string[] = []
+  if (r.added.length) parts.push(`${r.added.length} Bild${r.added.length === 1 ? '' : 'er'} zu @${account} hinzugefügt.`)
+  for (const b of r.blocked) parts.push(`„${b.name}“ abgelehnt: dasselbe Motiv liegt schon bei @${b.account}.`)
+  if (r.dupes.length) parts.push(`${r.dupes.length} schon im Pool von @${account}, übersprungen.`)
+  if (r.failed.length) parts.push(`Nicht lesbar: ${r.failed.join(', ')} (HEIC → als JPG exportieren).`)
+  return parts.join(' ')
+}
 interface TikTokDraft {
   concept: TikTokConcept
   cat: Category
@@ -78,6 +94,29 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
   const [phoneRect, setPhoneRect] = useState<TextRect | null>(null)
   // Rechtecke der freien Text-Elemente (Canvas liefert sie beim Zeichnen) → DOM-Griffe.
   const [textElRects, setTextElRects] = useState<Record<string, TextElRect>>({})
+  // ── TikTok-Konto + eigener Bilder-Pool ───────────────────────────────
+  const pool = usePool()
+  const [accountPref, setAccountPref] = useState<string>(() => {
+    try {
+      return localStorage.getItem(ACCOUNT_KEY) ?? ''
+    } catch {
+      return ''
+    }
+  })
+  const account = pool.accounts.includes(accountPref) ? accountPref : (pool.accounts[0] ?? '')
+  const chooseAccount = (a: string) => {
+    setAccountPref(a)
+    try {
+      localStorage.setItem(ACCOUNT_KEY, a)
+    } catch {
+      /* egal */
+    }
+  }
+  const [newAccount, setNewAccount] = useState('')
+  const [poolMsg, setPoolMsg] = useState('')
+  const [exportErr, setExportErr] = useState<string[]>([])
+  const mine = pool.imgs.filter(p => p.account === account)
+
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
 
@@ -154,6 +193,84 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [concept])
+
+  // Slides automatisch mit Bildern aus dem Pool des aktiven Kontos belegen.
+  // force=false: nur unberührte Slides (kein Hintergrund gewählt) und Pool-Bilder eines
+  //   anderen Kontos werden ersetzt — bewusst gewählte Verläufe/Standard bleiben.
+  // force=true („Andere Bilder"): alle Bild-Slides neu würfeln.
+  const fillFromPool = (src: TikTokSlide[], force: boolean): TikTokSlide[] | null => {
+    if (!account) return null
+    const ownIds = new Set(mine.map(p => p.id))
+    const isOwn = (s: TikTokSlide) => s.bg?.type === 'image' && !!s.bg.poolId && ownIds.has(s.bg.poolId)
+    const taken = new Set<string>()
+    if (!force) for (const s of src) if (isOwn(s) && s.bg?.type === 'image' && s.bg.poolId) taken.add(s.bg.poolId)
+    let changed = false
+    const next = src.map((s, i) => {
+      const curPool = s.bg?.type === 'image' ? s.bg.poolId : undefined
+      const needs = force
+        ? !s.bg || s.bg.type === 'image'
+        : !s.bg || (s.bg.type === 'image' && !!s.bg.poolId && !ownIds.has(s.bg.poolId))
+      if (!needs || (!force && isOwn(s))) return s
+      const p = pickPoolImg(mine, i + 1, taken, curPool)
+      if (!p) {
+        // Pool zu klein: Foto eines fremden Kontos nie stehen lassen
+        if (curPool && !ownIds.has(curPool)) {
+          changed = true
+          return { ...s, bg: undefined }
+        }
+        return s
+      }
+      taken.add(p.id)
+      changed = true
+      return { ...s, bg: poolBg(p) }
+    })
+    return changed ? next : null
+  }
+
+  useEffect(() => {
+    const next = fillFromPool(slides, false)
+    if (next) setConcept(c => ({ ...c, slides: next }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account, pool.imgs, concept])
+
+  const reshuffle = () => {
+    const next = fillFromPool(slides, true)
+    if (next) setSlides(next)
+  }
+
+  const uploadToPool = async (files: File[], slot: number, assignTo?: number) => {
+    if (!account) {
+      setPoolMsg('Erst ein Konto anlegen.')
+      return
+    }
+    setPoolMsg('Prüfe Bilder …')
+    const r = await pool.addImages(files, account, slot)
+    setPoolMsg(poolMessage(r, account))
+    if (assignTo != null && r.added[0]) updSlide(assignTo, { bg: poolBg(r.added[0]) })
+  }
+
+  const addAccount = () => {
+    const n = newAccount.trim().replace(/^@/, '')
+    if (!n) return
+    pool.addAccount(n)
+    chooseAccount(n)
+    setNewAccount('')
+  }
+
+  // Export-Sperre: jedes Foto muss aus dem Pool DIESES Kontos stammen.
+  const exportProblems = (): string[] => {
+    const out: string[] = []
+    slides.forEach((s, i) => {
+      if (s.bg?.type !== 'image') return
+      const pid = s.bg.poolId
+      const p = pid ? pool.imgs.find(x => x.id === pid) : undefined
+      if (!pid) out.push(`Slide ${i + 1}: Foto stammt nicht aus einem Konto-Pool.`)
+      else if (!p) out.push(`Slide ${i + 1}: Foto ist nicht mehr im Pool.`)
+      else if (p.account !== account) out.push(`Slide ${i + 1}: Foto gehört zu @${p.account}, nicht zu @${account}.`)
+    })
+    if (!account && out.length === 0 && slides.some(s => s.bg?.type === 'image')) out.push('Kein Konto gewählt.')
+    return out
+  }
 
   // Aktuellen Bearbeitungsstand als Entwurf sichern → uebersteht Seiten-Reload.
   useEffect(() => {
@@ -307,12 +424,16 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
   }
 
   const downloadAll = () => {
+    const problems = exportProblems()
+    setExportErr(problems)
+    if (problems.length) return
+    pool.markUsed(slides.flatMap(s => (s.bg?.type === 'image' && s.bg.poolId ? [s.bg.poolId] : [])))
     slides.forEach((s, i) => {
       setTimeout(async () => {
         const tmp = document.createElement('canvas')
         drawOne(tmp, s)
         await drawStickers(tmp, s.stickers)
-        downloadCanvas(tmp, `tiktok-${concept.ideaId}-slide-${i + 1}`)
+        downloadCanvas(tmp, `tiktok-${account || 'ohne-konto'}-${concept.ideaId}-slide-${i + 1}`)
       }, i * 350)
     })
   }
@@ -359,6 +480,20 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
               value={String(slides.length)}
               onChange={v => setCount(Number(v))}
             />
+          </div>
+          <div className="row">
+            <span className="hint">Konto:</span>
+            {pool.accounts.length > 0 && (
+              <Seg options={pool.accounts.map(a => ({ value: a, label: '@' + a }))} value={account} onChange={chooseAccount} />
+            )}
+            <input
+              className="pool-acc-input"
+              value={newAccount}
+              placeholder="neues Konto"
+              onChange={e => setNewAccount(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && addAccount()}
+            />
+            <button className="btn btn-sm" disabled={!newAccount.trim()} onClick={addAccount}>＋ Konto</button>
           </div>
           <div className="row">
             <button className="btn" onClick={variant}>Text-Variante</button>
@@ -442,6 +577,13 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
                   <button className="btn btn-primary btn-sm" onClick={downloadAll}>Alle als PNG</button>
                 </div>
               </div>
+              {exportErr.length > 0 && (
+                <div className="pool-err">
+                  <b>Export gestoppt</b> — sonst läuft dasselbe Foto auf zwei Konten:
+                  <ul>{exportErr.map(e => <li key={e}>{e}</li>)}</ul>
+                  <button className="btn btn-sm" onClick={() => { reshuffle(); setExportErr([]) }}>Fotos aus @{account || '…'} einsetzen</button>
+                </div>
+              )}
               <p className="hint" style={{ marginTop: 8 }}>
                 Text am „Text"-Griff ziehen (rastet mittig ein), Sticker direkt anfassen. Ausrichtung Oben/Mitte/Unten setzt die Position zurück.
               </p>
@@ -516,6 +658,79 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
             </div>
 
             <div className="card">
+              <div className="row" style={{ justifyContent: 'space-between' }}>
+                <h3 style={{ margin: 0 }}>Bilder-Pool {account ? '· @' + account : ''}</h3>
+                <button className="btn btn-sm" disabled={mine.length === 0} onClick={reshuffle} title="Alle Fotos neu aus dem Pool ziehen">
+                  ↻ Andere Bilder
+                </button>
+              </div>
+              {!account ? (
+                <p className="hint" style={{ marginTop: 8 }}>Oben ein Konto anlegen. Jedes Konto bekommt eigene Fotos — dasselbe Motiv darf nie auf zwei Konten laufen.</p>
+              ) : (
+                <>
+                  <p className="hint" style={{ marginTop: 8 }}>
+                    Läuft automatisch: Slides bekommen Fotos aus diesem Pool, am längsten unbenutzte zuerst. Nach „Alle als PNG" gelten sie als benutzt.
+                    Ein Motiv, das schon bei einem anderen Konto liegt, wird beim Hochladen abgelehnt.
+                  </p>
+                  {POOL_SLOTS.map(slot => {
+                    const list = mine.filter(p => p.slot === slot).sort((a, b) => a.usedAt - b.usedAt || b.createdAt - a.createdAt)
+                    const unused = list.filter(p => !p.usedAt).length
+                    return (
+                      <div className="pool-slot" key={slot}>
+                        <div className="row" style={{ justifyContent: 'space-between' }}>
+                          <span className="dp-sec-title" style={{ margin: 0 }}>Slide {slot} · {list.length} Fotos · {unused} unbenutzt</span>
+                          <label className="btn btn-sm" style={{ cursor: 'pointer' }}>
+                            ＋ Fotos
+                            <input
+                              type="file"
+                              accept="image/*"
+                              multiple
+                              style={{ display: 'none' }}
+                              onChange={e => {
+                                const files = Array.from(e.target.files ?? [])
+                                e.currentTarget.value = ''
+                                if (files.length) uploadToPool(files, slot)
+                              }}
+                            />
+                          </label>
+                        </div>
+                        {list.length > 0 && (
+                          <div className="shot-grid pool-grid">
+                            {list.map(p => {
+                              const on = activeSlide?.bg?.type === 'image' && activeSlide.bg.poolId === p.id
+                              return (
+                                <div
+                                  key={p.id}
+                                  className={'shot-tile' + (on ? ' on' : '') + (p.usedAt ? ' used' : '')}
+                                  onClick={() => updSlide(activeIdx, { bg: poolBg(p) })}
+                                  title={p.usedAt ? 'Benutzt am ' + new Date(p.usedAt).toLocaleDateString('de-DE') : 'Unbenutzt'}
+                                >
+                                  <img src={p.preview} alt="" />
+                                  {p.usedAt > 0 && <span className="pool-used">benutzt</span>}
+                                  <button
+                                    className="shot-del"
+                                    onClick={e => {
+                                      e.stopPropagation()
+                                      pool.removeImg(p.id)
+                                    }}
+                                    title="Aus dem Pool löschen"
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </>
+              )}
+              {poolMsg && <p className="hint pool-msg">{poolMsg}</p>}
+            </div>
+
+            <div className="card">
               <h3>Design</h3>
               <DesignPanel
                 style={style}
@@ -526,6 +741,7 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
                 onBg={setBg}
                 onImportSticker={importSticker}
                 stickerCount={activeSlide?.stickers?.length ?? 0}
+                onBgFile={file => uploadToPool([file], activeIdx + 1, activeIdx)}
               />
             </div>
 

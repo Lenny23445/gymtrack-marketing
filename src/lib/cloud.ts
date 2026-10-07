@@ -8,6 +8,8 @@ import {
   deleteDoc,
   getDocs,
   onSnapshot,
+  query,
+  where,
   type Firestore,
   type Unsubscribe,
 } from 'firebase/firestore'
@@ -168,6 +170,87 @@ export function cloudSubscribePosts(
     snap => onPosts(snap.docs.map(d => postFromDoc(d.data() as Record<string, unknown>)).filter((p): p is SavedPost => !!p)),
     err => {
       console.warn('[cloud] Post-Snapshot-Fehler — lokaler Modus:', err)
+      onError?.(err)
+    },
+  )
+}
+
+// ── Bilder-Pool pro TikTok-Konto ────────────────────────────────────────────
+// Liegt bewusst in mkt_posts (dort greifen die Regeln schon), unterschieden über
+// `poolKind`. postFromDoc ignoriert diese Dokumente, weil sie kein `json` haben.
+
+export interface PoolDoc {
+  id: string
+  account: string
+  slot: number // Slide-Position 1..4
+  preview: string // komprimierte 1290er-Vorschau (Original nur lokal)
+  hash: string // Ähnlichkeits-Fingerprint (dHash, 16 Hex)
+  hashFlip: string // dasselbe gespiegelt — Spiegeln umgeht die Sperre nicht
+  createdAt: number
+  usedAt: number // letzter Export, 0 = nie
+}
+
+const ACCOUNTS_DOC = 'pool-accounts'
+
+function poolFromDoc(id: string, d: Record<string, unknown>): PoolDoc | null {
+  if (d.poolKind !== 'img' || typeof d.preview !== 'string' || typeof d.account !== 'string') return null
+  return {
+    id,
+    account: d.account,
+    slot: typeof d.slot === 'number' ? d.slot : 1,
+    preview: d.preview,
+    hash: typeof d.hash === 'string' ? d.hash : '',
+    hashFlip: typeof d.hashFlip === 'string' ? d.hashFlip : '',
+    createdAt: typeof d.createdAt === 'number' ? d.createdAt : 0,
+    usedAt: typeof d.usedAt === 'number' ? d.usedAt : 0,
+  }
+}
+
+export async function cloudPutPool(p: PoolDoc): Promise<void> {
+  if (!db) return
+  const { id, ...rest } = p
+  await setDoc(doc(db, POSTS_COLLECTION, id), { poolKind: 'img', ...rest })
+}
+
+export async function cloudMarkPoolUsed(ids: string[], at: number): Promise<void> {
+  if (!db) return
+  await Promise.all(ids.map(id => setDoc(doc(db!, POSTS_COLLECTION, id), { usedAt: at }, { merge: true })))
+}
+
+export async function cloudDeletePool(id: string): Promise<void> {
+  if (!db) return
+  await deleteDoc(doc(db, POSTS_COLLECTION, id))
+}
+
+export async function cloudPutAccounts(names: string[]): Promise<void> {
+  if (!db) return
+  await setDoc(doc(db, POSTS_COLLECTION, ACCOUNTS_DOC), { poolKind: 'accounts', names })
+}
+
+// Live-Abo: Konten + alle Pool-Bilder. Null ohne Cloud.
+export function cloudSubscribePool(
+  onData: (accounts: string[] | null, imgs: PoolDoc[]) => void,
+  onError?: (e: unknown) => void,
+): Unsubscribe | null {
+  if (!db) return null
+  return onSnapshot(
+    query(collection(db, POSTS_COLLECTION), where('poolKind', 'in', ['img', 'accounts'])),
+    snap => {
+      let accounts: string[] | null = null
+      const imgs: PoolDoc[] = []
+      for (const d of snap.docs) {
+        const data = d.data() as Record<string, unknown>
+        if (d.id === ACCOUNTS_DOC) {
+          if (Array.isArray(data.names)) accounts = data.names.filter((n): n is string => typeof n === 'string')
+          continue
+        }
+        const p = poolFromDoc(d.id, data)
+        if (p) imgs.push(p)
+      }
+      onData(accounts, imgs)
+    },
+    err => {
+      console.warn('[cloud] Pool-Snapshot-Fehler — lokaler Modus:', err)
       onError?.(err)
     },
   )

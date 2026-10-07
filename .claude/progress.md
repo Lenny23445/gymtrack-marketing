@@ -1,5 +1,6 @@
-# TikTok: Slide-1-Foto 5 Tage Sperre pro Account
-- [x] Protokoll-Speicher (Cloud-Doc in mkt_posts + lokal)
-- [x] Foto-Fingerprint (Hash) für Slide 1
-- [~] Account-Auswahl + Sperre am PNG-Export
-- [ ] Build, Browser-Test, Push
+# TikTok: eigener Bilder-Pool pro Konto
+- [x] Code verstehen (Bilder, Slides, Export)
+- [x] Konten + Pool-Zuordnung (Cloud + lokal)
+- [x] Ähnlichkeits-Hash, Doppel-Sperre zwischen Konten
+- [x] UI: Konto-Auswahl, Auto-Befüllung, Export-Prüfung
+- [x] Build, Browser-Test, Push

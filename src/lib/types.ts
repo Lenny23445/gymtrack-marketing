@@ -91,7 +91,8 @@ export type SlideBg =
   // mid = Position des 50/50-Uebergangs (0..1, Default 0.5) → verschiebt die Mischung
   | { type: 'gradient'; from: string; to: string; angle: number; mid?: number }
   // fullId = Original in voller Auflösung (nur lokal, siehe putBgFull)
-  | { type: 'image'; dataUrl: string; fullId?: string }
+  // poolId = Bild aus dem Bilder-Pool eines TikTok-Kontos (siehe pool.ts)
+  | { type: 'image'; dataUrl: string; fullId?: string; poolId?: string }
 
 export interface TikTokSlide {
   text: string
