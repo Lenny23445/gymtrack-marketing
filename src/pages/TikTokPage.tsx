@@ -6,7 +6,7 @@ import { generateTikTok, tiktokAsText, TREND_LINKS } from '../data/tiktok'
 import { drawTikTokSlide, drawTikTokShot, drawStickers, drawSlideTexts, downscalePng, downloadCanvas, canvasThumb, DEFAULT_ACCENT, stripRich } from '../lib/canvas'
 import type { TextRect, TextElRect } from '../lib/canvas'
 import { upsertSaved, newPostId } from '../lib/savedPosts'
-import { loadImage, useShots } from '../lib/screenshots'
+import { loadBgFull, loadImage, useShots } from '../lib/screenshots'
 import { useFontsReady, DEFAULT_STYLE, FONTS } from '../lib/fonts'
 import type { TextStyle, FontKey } from '../lib/fonts'
 import type { EditRequest } from '../App'
@@ -143,7 +143,8 @@ export default function TikTokPage({ edit }: { edit: EditRequest | null }) {
         const url = s.bg.dataUrl
         if (bgImgCache[url]) continue
         try {
-          const im = await loadImage(url)
+          // Original in voller Auflösung bevorzugen, sonst die komprimierte Vorschau
+          const im = (s.bg.fullId ? await loadBgFull(s.bg.fullId) : null) ?? (await loadImage(url))
           if (!cancelled) setBgImgCache(prev => (prev[url] ? prev : { ...prev, [url]: im }))
         } catch {
           /* kaputtes Bild überspringen */

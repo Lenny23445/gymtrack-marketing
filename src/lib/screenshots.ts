@@ -240,3 +240,56 @@ export function useShots() {
 
   return { shots, loading, synced, add, remove }
 }
+
+// Hintergrundfotos der TikTok-Slides: Original in voller Auflösung NUR lokal (eigene
+// IndexedDB), denn die Slide trägt für Cloud/Entwurf nur eine komprimierte 1290er-
+// Vorschau (Firestore-1-MB-Limit). Gerendert/exportiert wird mit dem Original, sonst
+// wird das Foto auf 1920 hochgezogen und TikTok wertet die Slide als „niedrige Qualität".
+const BG_DB = 'gts-bg'
+const BG_STORE = 'full'
+
+function openBgDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(BG_DB, 1)
+    req.onupgradeneeded = () => {
+      const db = req.result
+      if (!db.objectStoreNames.contains(BG_STORE)) db.createObjectStore(BG_STORE)
+    }
+    req.onsuccess = () => resolve(req.result)
+    req.onerror = () => reject(req.error)
+  })
+}
+
+export async function putBgFull(id: string, blob: Blob): Promise<void> {
+  const db = await openBgDb()
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(BG_STORE, 'readwrite')
+    tx.objectStore(BG_STORE).put(blob, id)
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
+}
+
+// Original als Bild laden; null, wenn es auf diesem Gerät fehlt oder nicht dekodierbar ist.
+export async function loadBgFull(id: string): Promise<HTMLImageElement | null> {
+  try {
+    const db = await openBgDb()
+    const blob = await new Promise<Blob | undefined>((resolve, reject) => {
+      const req = db.transaction(BG_STORE, 'readonly').objectStore(BG_STORE).get(id)
+      req.onsuccess = () => resolve(req.result as Blob | undefined)
+      req.onerror = () => reject(req.error)
+    })
+    if (!blob) return null
+    const url = URL.createObjectURL(blob)
+    try {
+      const img = new Image()
+      img.src = url
+      await img.decode()
+      return img
+    } finally {
+      URL.revokeObjectURL(url)
+    }
+  } catch {
+    return null
+  }
+}

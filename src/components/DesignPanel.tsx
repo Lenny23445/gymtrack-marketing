@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { FONTS, EFFECTS } from '../lib/fonts'
 import type { TextStyle } from '../lib/fonts'
 import type { SlideBg } from '../lib/types'
-import { compressDataUrl } from '../lib/screenshots'
+import { compressDataUrl, putBgFull } from '../lib/screenshots'
 import { AccentPicker } from './ui'
 
 // Flaches Design-Panel: ALLE Werkzeuge gleichzeitig sichtbar (kein Akkordeon mehr) —
@@ -73,7 +73,13 @@ export function DesignPanel({
     const r = new FileReader()
     r.onload = async () => {
       const dataUrl = await compressDataUrl(r.result as string, 1290)
-      onBg({ type: 'image', dataUrl })
+      const fullId = `bg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      try {
+        await putBgFull(fullId, file)
+        onBg({ type: 'image', dataUrl, fullId })
+      } catch {
+        onBg({ type: 'image', dataUrl })
+      }
     }
     r.readAsDataURL(file)
   }
